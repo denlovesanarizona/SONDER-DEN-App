@@ -9,8 +9,8 @@ Everything you write is stored on your phone (IndexedDB). Nothing is sent anywhe
 |---|---|
 | `index.html` | Page shell |
 | `styles.css` | All styling (dark and light themes via CSS variables at the top) |
-| `app.js` | All screens and behaviour: Home, Timeline, Editor, Quick Log, Insights, Account |
-| `db.js` | Storage layer, moods and tags, default settings. Has a versioned schema |
+| `app.js` | All screens and behaviour: Home, Timeline, Editor, Quick Log, Insights, Budget, Plan a purchase, Account |
+| `db.js` | Storage layer, moods and tags, default settings and default budget goals. Has a versioned schema |
 | `icons.js` | Inline SVG icons |
 | `sw.js` | Service worker (offline + updates) |
 | `manifest.webmanifest`, `icons/` | What makes it installable |
@@ -47,6 +47,13 @@ If a future change needs a different data shape, bump `DB_VERSION` in `db.js` an
 - Use **Account → Backup & restore → Back up now** now and then and keep the `.json` file somewhere safe (Drive, email to yourself).
 - **App lock** is a screen lock (PIN). It keeps people out of the app but does not encrypt the stored data.
 - **Daily reminder** is an in-app nudge shown when you open Sonder after your chosen time. Real background notifications need a push server, which would defeat the "free and private" goal.
+
+## Budget
+
+- Money is stored as whole cents, so nothing drifts by a fraction of a cent. Data lives in the `meta` store under the key `budget` (no `DB_VERSION` bump needed) and is included in backups.
+- Change the default goals (names, shares, the Lenovo link) in `DEFAULT_BUDGET` in `db.js`, or in the app under Budget > Goals > Edit.
+- Share percentages only affect money added from then on. Old balances never change.
+- "History only" records (old purchases, income already spent) are kept for reference but ignored in balances.
 
 ## Next up
 

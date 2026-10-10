@@ -1,7 +1,7 @@
 // sw.js
 // Service worker: makes Sonder work offline and pick up updates.
 // To ship an update, change files and bump VERSION here (any byte change to this file triggers the update).
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const CACHE = `sonder-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'db.js', 'icons.js',

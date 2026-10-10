@@ -87,7 +87,7 @@ export const DEFAULT_BUDGET = {
   coins: 0,       // loose coins, not counted until added to the budget
   buckets: [
     { id: 'savings', name: 'Savings Fund', pct: 50, target: 0, url: '' },
-    { id: 'computer', name: 'Example', pct: 50, target: 0, url: '' }
+    { id: 'computer', name: 'Example Fund', pct: 50, target: 0, url: '' }
   ],
   txns: []        // income + expense records
 };

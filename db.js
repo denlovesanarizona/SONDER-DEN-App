@@ -69,7 +69,7 @@ export const moodById = (id) => MOODS.find((m) => m.id === id);
 export const TAGS = ['Work', 'Health', 'Social', 'Idea'];
 
 export const DEFAULT_SETTINGS = {
-  name: 'DEN',
+  name: 'USER',
   since: null,          // set on first run
   theme: 'dark',        // dark | light | system
   reminder: false,
@@ -77,4 +77,17 @@ export const DEFAULT_SETTINGS = {
   lockEnabled: false,
   lockHash: null,
   lockSalt: null
+};
+
+// Budget (v1.3). Stored in the `meta` store under the key 'budget', so no DB_VERSION bump is needed.
+// All amounts are whole cents. `pct` is each goal's share of new money (shares total 100).
+export const DEFAULT_BUDGET = {
+  setup: false,
+  taxRate: 0,   // default sales tax %, editable per purchase
+  coins: 0,       // loose coins, not counted until added to the budget
+  buckets: [
+    { id: 'savings', name: 'Savings Fund', pct: 50, target: 0, url: '' },
+    { id: 'computer', name: 'Example', pct: 50, target: 0, url: '' }
+  ],
+  txns: []        // income + expense records
 };

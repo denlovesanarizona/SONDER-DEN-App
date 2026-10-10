@@ -229,3 +229,60 @@ textarea.body { width: 100%; min-height: 55vh; background: var(--surface); borde
 /* v1.2: imported summary events */
 .logrow.summary { flex-direction: column; align-items: flex-start; gap: 10px; font-size: 14px; color: var(--muted); line-height: 1.5; }
 .tl .time { white-space: nowrap; }
+
+/* v1.3: budget */
+.sheet { max-height: 92vh; overflow-y: auto; overscroll-behavior: contain; }
+.btn-ghost.wide { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 15px 22px; }
+.warn { color: var(--danger); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+.xbtn { width: 34px; height: 34px; display: grid; place-items: center; color: var(--faint); flex: none; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row3 > label > span:not(.label) { display: block; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px 4px; }
+.row3 .field { padding: 13px 14px; font-size: 16px; }
+
+/* home card */
+.moneycard { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; margin-top: 14px; }
+.moneycard .mc-main { display: flex; flex-direction: column; text-align: left; gap: 2px; flex: 1; min-width: 0; }
+.moneycard .k { font-size: 13px; font-weight: 600; letter-spacing: .02em; color: var(--muted); }
+.moneycard b { font-size: 24px; font-weight: 700; }
+.moneycard .s { font-size: 13px; color: var(--muted); }
+.moneycard .btn-ghost { display: inline-flex; align-items: center; gap: 7px; flex: none; }
+
+/* budget screen */
+.bal { padding: 22px; margin-top: 22px; }
+.bal .k { font-size: 11.5px; letter-spacing: .09em; font-weight: 600; color: var(--muted); }
+.bal b { display: block; font-size: 40px; font-weight: 700; letter-spacing: -.02em; margin: 6px 0 4px; }
+.acts { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-top: 14px; }
+.acts .btn-primary, .acts .btn-ghost { padding: 14px 12px; font-size: 14.5px; }
+.bk { padding: 16px 18px; margin-bottom: 12px; }
+.bk .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.bk .nm { font-weight: 700; font-size: 16px; }
+.bk .amt { font-weight: 700; font-size: 19px; white-space: nowrap; }
+.bk .meta { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--muted); margin-top: 5px; }
+.bk .tr { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-top: 12px; }
+.bk .tr i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.bk a { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--violet); text-decoration: none; }
+.tx { display: flex; align-items: center; gap: 12px; padding: 14px 16px; width: 100%; text-align: left; margin-bottom: 10px; }
+.tx .l { flex: 1; min-width: 0; }
+.tx .l b { display: block; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx .l span { font-size: 12.5px; color: var(--muted); }
+.tx .a { font-weight: 700; font-size: 15px; white-space: nowrap; }
+.tx .a.in { color: var(--accent); }
+.tx.hist { opacity: .62; }
+
+/* planner */
+.plan .items { display: flex; flex-direction: column; gap: 10px; }
+.pitem { display: grid; grid-template-columns: 1fr 84px 44px 30px; gap: 6px; align-items: center; }
+.pitem .field { padding: 12px 12px; font-size: 16px; border-radius: 12px; min-width: 0; }
+.taxchip { height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; color: var(--faint); }
+.taxchip.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); font-weight: 600; }
+.sumcard { padding: 18px; margin-top: 18px; }
+.sumrow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; font-size: 15px; color: var(--muted); }
+.sumrow b { color: var(--text); font-weight: 600; white-space: nowrap; }
+.sumrow b.warn { color: var(--danger); }
+.sumrow em { font-style: normal; color: var(--faint); font-size: 12.5px; }
+.sumrow.total { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 14px; font-size: 17px; color: var(--text); }
+.sumrow.total b { font-size: 28px; font-weight: 700; }
+.note { font-size: 13px; color: var(--muted); margin: 10px 0 0; line-height: 1.45; }
+.note.warn { color: var(--danger); }
+.bkedit { border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 14px; }

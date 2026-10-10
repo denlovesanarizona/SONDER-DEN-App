@@ -1,11 +1,12 @@
 import { icon } from './icons.js';
-import { db, uid, MOODS, moodById, TAGS, DEFAULT_SETTINGS, ICON_DIR } from './db.js';
+import { db, uid, MOODS, moodById, TAGS, DEFAULT_SETTINGS, DEFAULT_BUDGET, ICON_DIR } from './db.js';
 
-export const VERSION = '1.2.0';
+export const VERSION = '1.3.0';
 const RELEASE_NOTES = [
-  'Summary events (imported history) show \u201CSummary\u201D or a month range instead of a clock time.',
-  'Summaries no longer count toward streaks, the heatmap, or your entry and log totals.',
-  'Exports show summaries without a made-up time.'
+  'New Budget: split your money between goals, and track every purchase and income.',
+  'Plan a purchase: add up prices and tax before you buy, see your balance afterwards and the change you\u2019ll get back.',
+  'Purchases keep their line items, so you can look back at exactly what you bought. Back-date old ones as history.',
+  'Budget data is included in backups and has a CSV export.'
 ];
 
 /* ---------- helpers ---------- */
@@ -67,6 +68,10 @@ const S = {
   jy: '',
   jm: '',
   from: 'home',
+  budget: null,
+  planDraft: null,
+  planFrom: 'budget',
+  budgetAll: false,
   locked: false,
   hiddenAt: 0
 };
@@ -75,6 +80,8 @@ async function loadAll() {
   S.items = (await db.all()).sort((a, b) => b.ts - a.ts);
   S.settings = { ...DEFAULT_SETTINGS, ...((await db.getMeta('settings')) || {}) };
   S.dayMood = (await db.getMeta('dayMood')) || {};
+  S.budget = { ...structuredClone(DEFAULT_BUDGET), ...((await db.getMeta('budget')) || {}) };
+  S.planDraft = (await db.getMeta('budgetPlan')) || null;
   if (!S.settings.since) { S.settings.since = Date.now(); await db.setMeta('settings', S.settings); }
 }
 const saveSettings = () => db.setMeta('settings', S.settings);
@@ -239,11 +246,14 @@ function render() {
   const { name, arg } = currentRoute();
   const app = $('#app');
   if (name !== 'edit') E = null;
+  if (name !== 'plan') P = null;
   let html;
   if (name === 'edit') { html = editorHTML(arg); }
   else if (name === 'timeline') html = timelineHTML();
   else if (name === 'insights') html = insightsHTML();
   else if (name === 'account') html = accountHTML();
+  else if (name === 'budget') html = budgetHTML();
+  else if (name === 'plan') html = planHTML(arg);
   else html = homeHTML();
   app.innerHTML = html;
   if (name !== lastRouteName) {
@@ -251,6 +261,7 @@ function render() {
     app.firstElementChild?.classList.add('enter');
   }
   if (name === 'edit') mountEditor();
+  if (name === 'plan') mountPlan();
 }
 window.addEventListener('hashchange', () => { closeSheet(); render(); });
 
@@ -277,6 +288,7 @@ function homeHTML() {
       <p class="q">“${esc(promptOfDay())}”</p>
       <button class="btn-ghost" data-act="new">${icon('pen', 17)}Write Today’s Entry</button>
     </div>
+    ${moneyCard()}
     <div class="row-between"><div class="eyebrow">Recent entries</div>
       <button class="link" data-act="viewAll">View All</button></div>
     ${recent.length ? recent.map(entryCard).join('') : `<div class="card empty">Nothing here yet.<br>Tap <b>Write Today’s Entry</b> to start your journal.</div>`}
@@ -580,7 +592,7 @@ function printPDF() {
   fr.onload = () => { fr.contentWindow.focus(); fr.contentWindow.print(); setTimeout(() => fr.remove(), 60000); };
 }
 async function backupJSON() {
-  const data = { app: 'sonder', version: 1, exported: new Date().toISOString(), settings: { name: S.settings.name, since: S.settings.since, theme: S.settings.theme }, dayMood: S.dayMood, items: S.items };
+  const data = { app: 'sonder', version: 2, exported: new Date().toISOString(), settings: { name: S.settings.name, since: S.settings.since, theme: S.settings.theme }, dayMood: S.dayMood, items: S.items, budget: S.budget };
   download(`sonder-backup-${todayKey()}.json`, JSON.stringify(data, null, 2), 'application/json');
   await db.setMeta('lastBackup', Date.now());
   toast('Backup saved to your downloads');
@@ -591,7 +603,7 @@ function pickImport() {
     try {
       const data = JSON.parse(await inp.files[0].text());
       if (data.app !== 'sonder' || !Array.isArray(data.items)) throw new Error('bad');
-      let n = 0;
+      let n = 0, bn = 0;
       for (const it of data.items) {
         if (!it || typeof it.id !== 'string' || !['journal', 'log'].includes(it.kind) || typeof it.ts !== 'number' || typeof it.body !== 'string') continue;
         const cur = S.items.find((x) => x.id === it.id);
@@ -599,9 +611,10 @@ function pickImport() {
       }
       S.dayMood = { ...(data.dayMood || {}), ...S.dayMood };
       await saveDayMood();
+      bn = await mergeBudget(data.budget);
       if (data.settings?.since && data.settings.since < S.settings.since) { S.settings.since = data.settings.since; await saveSettings(); }
       await loadAll(); closeSheet(); render();
-      toast(`Imported ${n} item${n === 1 ? '' : 's'}`);
+      toast(`Imported ${n} item${n === 1 ? '' : 's'}${bn ? ` and ${bn} budget record${bn === 1 ? '' : 's'}` : ''}`);
     } catch { toast('That file isn’t a Sonder backup'); }
   };
   inp.click();
@@ -626,9 +639,11 @@ const actions = {
   fab: () => {
     const el = openSheet(`<div class="menu">
       ${sheetRow('fabEntry', 'pen', 'Write a journal entry', 'Longer thoughts, with a mood')}
-      ${sheetRow('fabLog', 'plus', 'Quick log', 'One line about what just happened')}</div>`);
+      ${sheetRow('fabLog', 'plus', 'Quick log', 'One line about what just happened')}
+      ${sheetRow('fabPlan', 'cart', 'Plan a purchase', 'Add up prices and tax before you buy')}</div>`);
     el.querySelector('[data-act="fabEntry"]').onclick = () => { closeSheet(); actions.new(); };
     el.querySelector('[data-act="fabLog"]').onclick = () => { closeSheet(); openLog(); };
+    el.querySelector('[data-act="fabPlan"]').onclick = () => { closeSheet(); actions.planNew(); };
   },
   dayMood: async (t) => {
     const k = todayKey();
@@ -698,9 +713,509 @@ const actions = {
   eraseAll: async () => {
     if (!(await confirmSheet({ title: 'Erase everything?', text: 'This permanently deletes every entry and setting on this device. Export a backup first if you want to keep anything.', ok: 'Erase all data', danger: true }))) return;
     await db.clearItems(); await db.delMeta('settings'); await db.delMeta('dayMood'); await db.delMeta('draft');
+    await db.delMeta('budget'); await db.delMeta('budgetPlan'); S.planDraft = null; P = null;
     E = null; await loadAll(); applyTheme(); toast('All data erased'); go('home'); render();
   }
 };
+
+/* ---------- Budget (v1.3) ---------- */
+// All money is stored as whole cents (integers) so nothing ever drifts by a fraction of a cent.
+const cents = (s) => { const n = Number(String(s ?? '').replace(/[$,\s]/g, '')); return Number.isFinite(n) ? Math.round(n * 100) : NaN; };
+const money = (c) => `${c < 0 ? '\u2212' : ''}$${(Math.abs(c) / 100).toFixed(2)}`;
+const moneyIn = (c) => (c / 100).toFixed(2);
+const saveBudget = async () => { await db.setMeta('budget', S.budget); db.persist(); };
+const bucketOf = (id) => S.budget.buckets.find((k) => k.id === id);
+const bucketName = (id) => bucketOf(id)?.name || 'Removed goal';
+const safeUrl = (u) => (/^https?:\/\//i.test(u || '') ? u : '');
+
+// Balance of each goal = money allocated to it minus purchases paid from it. "History only" records are ignored.
+function balances() {
+  const b = {};
+  S.budget.buckets.forEach((k) => { b[k.id] = 0; });
+  for (const t of S.budget.txns) {
+    if (t.history) continue;
+    if (t.type === 'income') for (const [id, c] of Object.entries(t.alloc || {})) b[id] = (b[id] || 0) + c;
+    else if (t.type === 'expense') b[t.bucket] = (b[t.bucket] || 0) - t.amount;
+  }
+  return b;
+}
+const totalBalance = () => Object.values(balances()).reduce((n, c) => n + c, 0);
+
+// Split an amount between goals by their share %, to the exact cent.
+function splitCents(total, only) {
+  const bs = S.budget.buckets;
+  if (only && bucketOf(only)) return { [only]: total };
+  const sum = bs.reduce((n, k) => n + k.pct, 0) || 1;
+  const out = {}; let used = 0;
+  bs.forEach((k) => { out[k.id] = Math.floor(total * k.pct / sum); used += out[k.id]; });
+  let left = total - used;
+  // largest-remainder method: leftover cents go to whichever goals lost the most to rounding
+  [...bs].sort((a, b) => ((total * b.pct) % sum) - ((total * a.pct) % sum) || b.pct - a.pct).forEach((k) => { if (left > 0) { out[k.id]++; left--; } });
+  return out;
+}
+function upsertTxn(t) {
+  const L = S.budget.txns, i = L.findIndex((x) => x.id === t.id);
+  if (i >= 0) L[i] = t; else L.push(t);
+  L.sort((a, b) => b.ts - a.ts);
+}
+
+/* Home card */
+function moneyCard() {
+  if (!S.budget.setup) {
+    return `<div class="card moneycard"><button class="mc-main" data-act="go" data-to="budget"><span class="k">BUDGET</span><b>Set up your budget</b><span class="s">Plan every purchase to the cent</span></button></div>`;
+  }
+  return `<div class="card moneycard"><button class="mc-main" data-act="go" data-to="budget"><span class="k">BUDGET</span><b>${money(totalBalance())}</b><span class="s">available across your goals</span></button>
+    <button class="btn-ghost" data-act="planNew">${icon('cart', 16)}Plan</button></div>`;
+}
+
+/* Budget screen */
+function txRow(t) {
+  const inc = t.type === 'income';
+  const where = inc ? (t.only ? bucketName(t.only) : 'Split') : bucketName(t.bucket);
+  const n = !inc && t.items?.length > 1 ? ` \u00B7 ${t.items.length} items` : '';
+  return `<button class="card tx${t.history ? ' hist' : ''}" data-act="txOpen" data-id="${t.id}">
+    <span class="l"><b>${esc(t.title)}</b><span>${esc(fmtShort(t.ts))} \u00B7 ${esc(where)}${n}${t.history ? ' \u00B7 history' : ''}</span></span>
+    <span class="a ${inc ? 'in' : ''}">${inc ? '+' : '\u2212'}${money(t.amount)}</span></button>`;
+}
+function budgetHTML() {
+  const B = S.budget;
+  if (!B.setup) {
+    return `<div class="screen"><h1>Budget</h1><p class="sub">Every cent, planned before you spend</p>
+      <div class="card empty" style="margin-top:22px">Tell Sonder how much you have right now.<br>It gets split between your goals automatically.<br><br>
+      <button class="btn-primary" data-act="budgetSetup" style="max-width:260px;margin:0 auto">Set up budget</button></div></div>${nav('budget')}`;
+  }
+  const bal = balances();
+  const total = Object.values(bal).reduce((n, c) => n + c, 0);
+  const now = new Date();
+  const mt = B.txns.filter((t) => !t.history && new Date(t.ts).getFullYear() === now.getFullYear() && new Date(t.ts).getMonth() === now.getMonth());
+  const inM = mt.filter((t) => t.type === 'income').reduce((n, t) => n + t.amount, 0);
+  const exp = mt.filter((t) => t.type === 'expense');
+  const outM = exp.reduce((n, t) => n + t.amount, 0);
+  const list = S.budgetAll ? B.txns : B.txns.slice(0, 12);
+  const bucketCard = (k) => {
+    const b = bal[k.id] || 0;
+    const pct = k.target > 0 ? Math.max(0, Math.min(100, (b / k.target) * 100)) : 0;
+    return `<div class="card bk"><div class="top"><span class="nm">${esc(k.name)}</span><span class="amt ${b < 0 ? 'warn' : ''}">${money(b)}</span></div>
+      <div class="meta"><span>${k.pct}% of new money${k.target > 0 ? ` \u00B7 goal ${money(k.target)}` : ''}</span>${k.target > 0 ? `<span>${b >= k.target ? 'Goal reached' : `${money(k.target - b)} to go`}</span>` : ''}</div>
+      ${k.target > 0 ? `<div class="tr"><i style="width:${pct}%"></i></div>` : ''}
+      ${safeUrl(k.url) ? `<a href="${esc(safeUrl(k.url))}" target="_blank" rel="noopener">Open listing</a>` : ''}</div>`;
+  };
+  return `<div class="screen">
+    <h1>Budget</h1><p class="sub">Every cent, planned before you spend</p>
+    <div class="card bal"><div class="k">AVAILABLE TO SPEND</div><b class="${total < 0 ? 'warn' : ''}">${money(total)}</b>
+      <button class="link" data-act="coins" style="margin-top:2px">Loose coins: ${money(B.coins || 0)} (not counted)</button></div>
+    <div class="acts">
+      <button class="btn-primary" data-act="planNew">${icon('cart', 18)}Plan a purchase</button>
+      <button class="btn-ghost wide" data-act="addIncome">${icon('plus', 16)}Add income</button></div>
+    <div class="row-between"><div class="eyebrow">Goals</div><button class="link" data-act="editBuckets">Edit</button></div>
+    ${B.buckets.map(bucketCard).join('')}
+    <div class="eyebrow">This month</div>
+    <div class="stats">
+      <div class="card stat"><b>${money(inM)}</b><span>Income</span></div>
+      <div class="card stat"><b>${money(outM)}</b><span>Spent</span></div>
+      <div class="card stat"><b>${exp.length}</b><span>Purchases</span></div></div>
+    <div class="row-between"><div class="eyebrow">Activity</div>${B.txns.length ? '<button class="link" data-act="budgetCSV">Export CSV</button>' : ''}</div>
+    ${list.length ? list.map(txRow).join('') : '<div class="card empty">No activity yet.<br>Plan a purchase or add income to begin.</div>'}
+    ${B.txns.length > 12 ? `<button class="link" data-act="budgetMore" style="display:block;margin:6px auto 0">${S.budgetAll ? 'Show less' : `Show all ${B.txns.length}`}</button>` : ''}
+  </div>${nav('budget')}`;
+}
+
+/* Income sheet (also used for the starting balance) */
+function openIncome({ id, setup = false } = {}) {
+  const B = S.budget, ex = id ? B.txns.find((t) => t.id === id) : null;
+  let ts = ex ? ex.ts : Date.now(), only = ex?.only || '', hist = !!ex?.history;
+  const label = () => `${dayKey(ts) === todayKey() ? 'Today' : fmtShort(ts)} \u00B7 ${fmtTime(ts)}`;
+  const el = openSheet(`
+    <div class="hd"><h2>${setup ? 'Starting balance' : ex ? 'Edit income' : 'Add income'}</h2>
+      ${setup ? '' : `<span class="dtwrap"><button type="button" class="pill" id="inTsBtn" style="padding:8px 14px">${icon('calendar', 15)}<span id="inTsLabel">${esc(label())}</span></button><input id="inTsInput" class="hidden-dt" type="datetime-local" value="${toLocalInput(ts)}" max="${toLocalInput(Date.now())}"></span>`}</div>
+    ${setup ? '<p class="sub" style="margin:-8px 0 14px;line-height:1.5">How much money do you have right now? It\u2019s split between your goals using their share percentages.</p>' : ''}
+    <div class="label">Amount</div>
+    <input class="field" id="inAmt" inputmode="decimal" placeholder="0.00" value="${ex ? moneyIn(ex.amount) : ''}" autocomplete="off">
+    <div class="label" style="margin-top:14px">${setup ? 'Note' : 'From'}</div>
+    <input class="field" id="inNote" placeholder="${setup ? 'Starting balance' : 'e.g. Helping Uncle'}" value="${esc(ex ? ex.title : setup ? 'Starting balance' : '')}" autocomplete="off">
+    <div class="label" style="margin-top:14px">Put it in</div>
+    <div class="chips" id="inWhere"><button type="button" class="pill" data-w="">Split</button>${B.buckets.map((k) => `<button type="button" class="pill" data-w="${esc(k.id)}">${esc(k.name)}</button>`).join('')}</div>
+    <div class="sub" id="inPrev" style="min-height:20px;margin:0 4px 12px;font-size:13px"></div>
+    ${setup ? '' : `<button type="button" class="setrow" id="inHist" style="border:0;padding:6px 4px"><span class="t" style="white-space:normal">History only<span class="sub" style="display:block;font-size:12.5px">Record it without changing my balance</span></span><span class="toggle ${hist ? 'on' : ''}"></span></button>`}
+    <button class="btn-primary" id="inSave" style="margin-top:12px">${setup ? 'Start budget' : 'Save'}</button>
+    ${setup ? '<button class="btn-ghost wide" id="inSkip" style="margin-top:10px;padding:14px">Start at $0.00</button>' : ''}
+    ${ex ? '<button class="btn-ghost wide" id="inDel" style="margin-top:10px;padding:14px;color:var(--danger)">Delete</button>' : ''}`);
+  const amt = $('#inAmt', el), prev = $('#inPrev', el);
+  const paint = () => {
+    el.querySelectorAll('[data-w]').forEach((b) => b.classList.toggle('on', b.dataset.w === only));
+    const c = cents(amt.value);
+    if (!(c > 0)) { prev.textContent = ''; return; }
+    const a = splitCents(c, only);
+    prev.textContent = B.buckets.filter((k) => a[k.id]).map((k) => `${k.name}: ${money(a[k.id])}`).join(' \u00B7 ');
+  };
+  paint();
+  setTimeout(() => amt.focus(), 120);
+  amt.addEventListener('input', paint);
+  el.querySelectorAll('[data-w]').forEach((b) => b.addEventListener('click', () => { only = b.dataset.w; paint(); }));
+  $('#inTsBtn', el)?.addEventListener('click', () => pickDate($('#inTsInput', el)));
+  $('#inTsInput', el)?.addEventListener('change', (e) => {
+    const t = new Date(e.target.value).getTime();
+    if (!isNaN(t)) { ts = t; $('#inTsLabel', el).textContent = label(); }
+  });
+  $('#inHist', el)?.addEventListener('click', (e) => { hist = !hist; e.currentTarget.querySelector('.toggle').classList.toggle('on', hist); });
+  $('#inSave', el).addEventListener('click', async () => {
+    const c = cents(amt.value);
+    if (!(c > 0)) { amt.focus(); toast('Enter an amount'); return; }
+    const same = ex && ex.amount === c && (ex.only || '') === only;
+    upsertTxn({ ...(ex || {}), id: ex?.id || uid(), type: 'income', ts, amount: c, title: $('#inNote', el).value.trim() || (setup ? 'Starting balance' : 'Income'), only, alloc: same ? ex.alloc : splitCents(c, only), history: hist, updated: Date.now() });
+    B.setup = true;
+    await saveBudget(); closeSheet(); toast(setup ? 'Budget started' : 'Saved'); render();
+  });
+  $('#inSkip', el)?.addEventListener('click', async () => { B.setup = true; await saveBudget(); closeSheet(); render(); });
+  $('#inDel', el)?.addEventListener('click', async () => {
+    closeSheet();
+    if (await confirmSheet({ title: 'Delete this income?', text: 'Your goal balances will update. This can\u2019t be undone.', ok: 'Delete', danger: true })) {
+      B.txns = B.txns.filter((t) => t.id !== ex.id); await saveBudget(); toast('Deleted'); render();
+    }
+  });
+}
+
+/* Goals & settings sheet */
+function bkRow(k) {
+  return `<div class="bkedit" data-b="${esc(k.id)}">
+    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><input class="field" data-f="name" value="${esc(k.name)}" placeholder="Goal name" maxlength="40" style="padding:12px 14px;font-size:16px"><button type="button" class="xbtn" data-bkdel aria-label="Remove goal">${icon('trash', 16)}</button></div>
+    <div class="row3"><label><span>Share %</span><input class="field" data-f="pct" inputmode="numeric" value="${k.pct}"></label><label><span>Goal $</span><input class="field" data-f="target" inputmode="decimal" placeholder="optional" value="${k.target ? moneyIn(k.target) : ''}"></label></div>
+    <input class="field" data-f="url" placeholder="Link (optional)" value="${esc(k.url || '')}" style="margin-top:8px;padding:12px 14px;font-size:15px"></div>`;
+}
+function openBuckets() {
+  const B = S.budget;
+  const el = openSheet(`<div class="hd"><h2>Goals &amp; settings</h2></div>
+    <p class="sub" style="margin:-8px 0 14px;line-height:1.5">Shares decide how new money is split. They only affect money you add from now on; past balances don\u2019t change.</p>
+    <div id="bkList">${B.buckets.map(bkRow).join('')}</div>
+    <button class="btn-ghost wide" id="bkAdd">${icon('plus', 16)}Add a goal</button>
+    <div class="sub" id="bkSum" style="margin:12px 4px;font-size:13px"></div>
+    <div class="label">Default sales tax %</div>
+    <input class="field" id="bkTax" inputmode="decimal" value="${esc(String(B.taxRate))}" style="margin-bottom:6px">
+    <p class="sub" style="font-size:12.5px;margin:0 4px 18px">Used when planning a purchase. You can change it for any single purchase.</p>
+    <button class="btn-primary" id="bkSave">Save</button>`);
+  const rows = () => [...el.querySelectorAll('.bkedit')];
+  const paint = () => {
+    const sum = rows().reduce((n, r) => n + (parseInt($('[data-f="pct"]', r).value, 10) || 0), 0);
+    const s = $('#bkSum', el);
+    s.textContent = `Shares add up to ${sum}%${sum === 100 ? '' : ' \u2014 they need to total 100%'}`;
+    s.classList.toggle('warn', sum !== 100);
+  };
+  paint();
+  el.addEventListener('input', paint);
+  $('#bkAdd', el).addEventListener('click', () => {
+    $('#bkList', el).insertAdjacentHTML('beforeend', bkRow({ id: uid(), name: '', pct: 0, target: 0, url: '' }));
+    const r = rows(); $('[data-f="name"]', r[r.length - 1]).focus(); paint();
+  });
+  el.addEventListener('click', (e) => {
+    const d = e.target.closest('[data-bkdel]');
+    if (!d) return;
+    const row = d.closest('.bkedit'), bid = row.dataset.b;
+    if (rows().length <= 1) { toast('Keep at least one goal'); return; }
+    if (B.txns.some((t) => t.bucket === bid || t.only === bid || t.alloc?.[bid])) { toast('That goal has activity \u2014 set its share to 0% instead'); return; }
+    row.remove(); paint();
+  });
+  $('#bkSave', el).addEventListener('click', async () => {
+    const nb = [];
+    for (const r of rows()) {
+      const name = $('[data-f="name"]', r).value.trim();
+      const pct = parseInt($('[data-f="pct"]', r).value, 10) || 0;
+      const tg = $('[data-f="target"]', r).value.trim();
+      const target = tg === '' ? 0 : cents(tg);
+      if (!name) { toast('Every goal needs a name'); return; }
+      if (pct < 0 || pct > 100 || Number.isNaN(target) || target < 0) { toast(`Check the numbers for \u201C${name}\u201D`); return; }
+      nb.push({ id: r.dataset.b, name, pct, target, url: $('[data-f="url"]', r).value.trim() });
+    }
+    if (nb.reduce((n, k) => n + k.pct, 0) !== 100) { toast('Shares need to add up to 100%'); return; }
+    const tax = parseFloat($('#bkTax', el).value);
+    if (!(tax >= 0 && tax <= 25)) { toast('Check the tax rate'); return; }
+    B.buckets = nb; B.taxRate = tax;
+    await saveBudget(); closeSheet(); toast('Saved'); render();
+  });
+}
+
+/* Loose coins sheet */
+function openCoins() {
+  const B = S.budget;
+  const el = openSheet(`<div class="hd"><h2>Loose coins</h2></div>
+    <p class="sub" style="margin:-8px 0 14px;line-height:1.5">Coins in your jar don\u2019t count toward your balance until you add them. Count them, then add them to split between your goals.</p>
+    <div class="label">Amount in the jar</div>
+    <input class="field" id="coinIn" inputmode="decimal" placeholder="0.00" value="${B.coins ? moneyIn(B.coins) : ''}" style="margin-bottom:18px" autocomplete="off">
+    <button class="btn-primary" id="coinAdd">Add to my budget</button>
+    <button class="btn-ghost wide" id="coinSave" style="margin-top:10px;padding:14px">Just remember the amount</button>`);
+  const read = () => { const c = cents($('#coinIn', el).value); return Number.isNaN(c) || c < 0 ? null : c; };
+  $('#coinSave', el).addEventListener('click', async () => {
+    const c = read(); if (c === null) { toast('Enter an amount'); return; }
+    B.coins = c; await saveBudget(); closeSheet(); render();
+  });
+  $('#coinAdd', el).addEventListener('click', async () => {
+    const c = read(); if (!c) { toast('Enter an amount'); return; }
+    upsertTxn({ id: uid(), type: 'income', ts: Date.now(), amount: c, title: 'Coins', only: '', alloc: splitCents(c, ''), history: false, updated: Date.now() });
+    B.coins = 0; await saveBudget(); closeSheet(); toast(`Added ${money(c)}`); render();
+  });
+}
+
+function budgetCSV() {
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [['Date', 'Type', 'Title', 'Store', 'Goal', 'Amount', 'Tax', 'Paid with', 'Change', 'History only', 'Items']];
+  [...S.budget.txns].sort((a, b) => a.ts - b.ts).forEach((t) => rows.push([
+    toLocalInput(t.ts).replace('T', ' '), t.type, t.title, t.store || '',
+    t.type === 'income' ? (t.only ? bucketName(t.only) : 'Split') : bucketName(t.bucket),
+    moneyIn(t.amount), t.tax != null ? moneyIn(t.tax) : '',
+    t.tendered != null ? moneyIn(t.tendered) : '', t.tendered != null ? moneyIn(t.tendered - t.amount) : '',
+    t.history ? 'yes' : '', (t.items || []).map((i) => `${i.name} ${moneyIn(i.price)}`).join(' | ')
+  ]));
+  return rows.map((r) => r.map(q).join(',')).join('\n');
+}
+
+async function mergeBudget(inc) {
+  if (!inc || typeof inc !== 'object') return 0;
+  const B = S.budget;
+  const ok = (t) => t && typeof t.id === 'string' && ['income', 'expense'].includes(t.type) && typeof t.ts === 'number' && Number.isInteger(t.amount);
+  let n = 0;
+  if (!B.setup && !B.txns.length) {
+    S.budget = { ...structuredClone(DEFAULT_BUDGET), ...inc, txns: (inc.txns || []).filter(ok) };
+    n = S.budget.txns.length;
+  } else {
+    const ids = new Set(B.buckets.map((k) => k.id));
+    (inc.buckets || []).forEach((k) => { if (k && !ids.has(k.id)) B.buckets.push(k); });
+    for (const t of inc.txns || []) {
+      if (!ok(t)) continue;
+      const cur = B.txns.find((x) => x.id === t.id);
+      if (!cur || (t.updated || 0) > (cur.updated || 0)) { upsertTxn(t); n++; }
+    }
+  }
+  await saveBudget();
+  return n;
+}
+
+/* ---------- Plan a purchase ---------- */
+let P = null, planTimer;
+const newPlan = () => ({
+  key: 'new', editId: null, store: '', items: [{ id: uid(), name: '', price: '', taxed: true }],
+  rate: String(S.budget.taxRate), taxExact: '', bucket: S.budget.buckets[0]?.id || '', tendered: '', ts: null, history: false, dirty: false
+});
+function startPlan(arg) {
+  if (P && P.key === (arg || 'new')) return;
+  if (arg && arg !== 'new') {
+    const t = S.budget.txns.find((x) => x.id === arg && x.type === 'expense');
+    if (t) {
+      const src = t.items?.length ? t.items : [{ name: t.title, price: t.amount - (t.tax || 0), taxed: false }];
+      P = {
+        key: arg, editId: t.id, store: t.store || '', items: src.map((i) => ({ id: uid(), name: i.name, price: moneyIn(i.price), taxed: !!i.taxed })),
+        rate: String(t.rate ?? S.budget.taxRate), taxExact: t.tax != null ? moneyIn(t.tax) : '', bucket: t.bucket,
+        tendered: t.tendered != null ? moneyIn(t.tendered) : '', ts: t.ts, history: !!t.history, dirty: false
+      };
+      return;
+    }
+  }
+  P = S.planDraft && S.planDraft.items ? { ...newPlan(), ...S.planDraft, key: 'new', editId: null, dirty: false } : newPlan();
+}
+function planSnap() {
+  const { items, store, rate, taxExact, bucket, tendered, ts, history } = P;
+  return { items, store, rate, taxExact, bucket, tendered, ts, history };
+}
+function savePlanDraft() {
+  if (!P) return;
+  P.dirty = true;
+  if (P.editId) return;
+  S.planDraft = planSnap();
+  clearTimeout(planTimer);
+  planTimer = setTimeout(() => { if (S.planDraft) db.setMeta('budgetPlan', S.planDraft); }, 400);
+}
+async function dropPlanDraft() {
+  clearTimeout(planTimer); S.planDraft = null; await db.delMeta('budgetPlan');
+}
+
+function planCalc() {
+  const rows = P.items.filter((i) => i.name.trim() || i.price.trim());
+  const parsed = rows.map((i) => ({ ...i, c: cents(i.price) }));
+  const bad = parsed.some((i) => !(i.c > 0));
+  const ok = parsed.filter((i) => i.c > 0);
+  const sub = ok.reduce((n, i) => n + i.c, 0);
+  const taxable = ok.reduce((n, i) => n + (i.taxed ? i.c : 0), 0);
+  const rate = Math.max(0, parseFloat(P.rate) || 0);
+  const exact = P.taxExact.trim() === '' ? NaN : cents(P.taxExact);
+  const tax = Number.isNaN(exact) ? Math.round((taxable * rate) / 100) : Math.max(0, exact);
+  const total = sub + tax;
+  const tendered = P.tendered.trim() === '' ? NaN : cents(P.tendered);
+  let before = balances()[P.bucket] || 0;
+  if (P.editId) {
+    const old = S.budget.txns.find((x) => x.id === P.editId);
+    if (old && !old.history && old.bucket === P.bucket) before += old.amount;
+  }
+  const after = P.history ? before : before - total;
+  return { ok, bad, sub, tax, rate, total, tendered, before, after, exactTax: !Number.isNaN(exact) };
+}
+
+const planItemsHTML = () => P.items.map((i) => `<div class="pitem">
+  <input class="field" data-i="${i.id}" data-f="name" placeholder="Item" value="${esc(i.name)}" autocomplete="off">
+  <input class="field" data-i="${i.id}" data-f="price" inputmode="decimal" placeholder="0.00" value="${esc(i.price)}" autocomplete="off">
+  <button type="button" class="taxchip ${i.taxed ? 'on' : ''}" data-act="planTax" data-i="${i.id}" aria-pressed="${i.taxed}" title="Charge sales tax on this item">Tax</button>
+  <button type="button" class="xbtn" data-act="planRemove" data-i="${i.id}" aria-label="Remove item">${icon('x', 16)}</button></div>`).join('');
+
+function planHTML(arg) {
+  startPlan(arg);
+  const B = S.budget, bal = balances();
+  if (!bucketOf(P.bucket)) P.bucket = B.buckets[0]?.id || '';
+  return `<div class="editor plan" id="planRoot">
+    <div class="ed-top">
+      <button class="round" data-act="planBack" aria-label="Back">${icon('back', 19)}</button><span></span>
+      ${P.editId ? `<button class="round" data-act="planDelete" aria-label="Delete" style="color:var(--danger)">${icon('trash', 18)}</button>` : '<button class="btn-ghost" data-act="planClear" style="padding:10px 18px">Clear</button>'}
+    </div>
+    <h1>${P.editId ? 'Edit purchase' : 'Plan a purchase'}</h1>
+    <p class="sub" style="margin:4px 0 18px;line-height:1.5">Add everything in your cart. Nothing changes your balance until you tap \u201C${P.editId ? 'Save changes' : 'I bought it'}\u201D.</p>
+    <div class="label">Store or title</div>
+    <input class="field" id="plStore" placeholder="e.g. Barnes &amp; Noble" value="${esc(P.store)}" autocomplete="off">
+    <div class="label" style="margin-top:16px">Items</div>
+    <div class="items" id="planItems">${planItemsHTML()}</div>
+    <button class="btn-ghost wide" data-act="planAdd" style="margin-top:10px">${icon('plus', 16)}Add item</button>
+    <div class="row3" style="margin-top:16px">
+      <label><span class="label" style="display:block;margin-left:4px">Tax rate %</span><input class="field" id="plRate" inputmode="decimal" value="${esc(P.rate)}"></label>
+      <label><span class="label" style="display:block;margin-left:4px">Exact tax $</span><input class="field" id="plTaxExact" inputmode="decimal" placeholder="optional" value="${esc(P.taxExact)}"></label>
+    </div>
+    <div class="card sumcard" id="planSum"></div>
+    <div class="label" style="margin-top:20px">Pay from</div>
+    <div class="chips" id="planBuckets">${B.buckets.map((k) => `<button type="button" class="pill" data-act="planBucket" data-id="${esc(k.id)}">${esc(k.name)} \u00B7 ${money(bal[k.id] || 0)}</button>`).join('')}</div>
+    <div class="label" style="margin-top:8px">Cash you\u2019ll hand over</div>
+    <input class="field" id="plTender" inputmode="decimal" placeholder="optional" value="${esc(P.tendered)}" autocomplete="off">
+    <div class="chips" id="planChips"></div>
+    <div class="sub" id="planChange" style="margin:0 4px 6px;min-height:20px"></div>
+    <div class="label" style="margin-top:12px">Date &amp; time</div>
+    <div class="dtwrap"><button type="button" class="field datefield" id="plDateBtn"><span id="plDateText">${P.ts ? esc(fmtStamp(P.ts)) : 'Now'}</span>${icon('calendar', 18)}</button>
+      <input type="datetime-local" id="plDateInput" class="hidden-dt" value="${toLocalInput(P.ts || Date.now())}" max="${toLocalInput(Date.now())}"></div>
+    <div class="card group" style="margin-top:14px"><button type="button" class="setrow" id="planHist" data-act="planHist"><span class="t" style="white-space:normal">History only<span class="sub" style="display:block;font-size:12.5px">Already happened \u2014 record it without changing my balance</span></span><span class="toggle ${P.history ? 'on' : ''}"></span></button></div>
+    <button class="btn-primary" data-act="planSave" style="margin-top:20px">${icon('check', 18)}${P.editId ? 'Save changes' : 'I bought it'}</button>
+  </div>`;
+}
+
+function paintPlan() {
+  const c = planCalc(), bk = bucketOf(P.bucket);
+  const over = !P.history && c.after < 0;
+  $('#planSum').innerHTML = `
+    <div class="sumrow"><span>Subtotal \u00B7 ${c.ok.length} item${c.ok.length === 1 ? '' : 's'}</span><b>${money(c.sub)}</b></div>
+    <div class="sumrow"><span>Tax ${c.exactTax ? '(exact)' : `(${c.rate}%)`}</span><b>${money(c.tax)}</b></div>
+    <div class="sumrow total"><span>Total</span><b>${money(c.total)}</b></div>
+    <div class="sumrow" style="margin-top:6px"><span>${esc(bk ? bk.name : '')}</span><b class="${over ? 'warn' : ''}">${money(c.before)} \u2192 ${money(c.after)}</b></div>
+    ${P.history ? '<p class="note">History only \u2014 this won\u2019t change your balance.</p>' : ''}
+    ${over ? `<p class="note warn">That\u2019s ${money(-c.after)} more than you have in this goal.</p>` : ''}
+    ${c.bad ? '<p class="note warn">Every item needs a price.</p>' : ''}`;
+  const opts = new Set();
+  if (c.total > 0) {
+    opts.add(c.total); opts.add(Math.ceil(c.total / 100) * 100);
+    [500, 1000, 2000, 5000, 10000].filter((b) => b >= c.total).slice(0, 3).forEach((b) => opts.add(b));
+  }
+  $('#planChips').innerHTML = [...opts].sort((a, b) => a - b).map((v) => `<button type="button" class="pill ${c.tendered === v ? 'on' : ''}" data-act="planChip" data-v="${v}">${v === c.total ? `Exact ${money(v)}` : money(v)}</button>`).join('');
+  const ch = $('#planChange');
+  if (Number.isNaN(c.tendered) || c.total <= 0) ch.innerHTML = '';
+  else if (c.tendered < c.total) ch.innerHTML = `<span class="warn">Short by ${money(c.total - c.tendered)}</span>`;
+  else ch.innerHTML = `Change back: <b style="color:var(--text)">${money(c.tendered - c.total)}</b>`;
+  document.querySelectorAll('#planBuckets [data-id]').forEach((b) => b.classList.toggle('on', b.dataset.id === P.bucket));
+  $('#planHist .toggle').classList.toggle('on', P.history);
+}
+function mountPlan() {
+  const root = $('#planRoot');
+  root.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.dataset.i) { const it = P.items.find((x) => x.id === t.dataset.i); if (!it) return; it[t.dataset.f] = t.value; }
+    else if (t.id === 'plStore') P.store = t.value;
+    else if (t.id === 'plRate') P.rate = t.value;
+    else if (t.id === 'plTaxExact') P.taxExact = t.value;
+    else if (t.id === 'plTender') P.tendered = t.value;
+    else return;
+    paintPlan(); savePlanDraft();
+  });
+  $('#plDateBtn').addEventListener('click', () => pickDate($('#plDateInput')));
+  $('#plDateInput').addEventListener('change', (e) => {
+    const t = new Date(e.target.value).getTime();
+    if (isNaN(t)) return;
+    P.ts = t; $('#plDateText').textContent = fmtStamp(t); savePlanDraft();
+  });
+  paintPlan();
+}
+async function savePlan() {
+  const c = planCalc();
+  if (!c.ok.length || c.bad) { toast(c.ok.length ? 'Every item needs a price' : 'Add an item and a price'); return; }
+  if (!P.history && c.after < 0 && !(await confirmSheet({ title: 'Over budget', text: `This is ${money(-c.after)} more than you have in ${bucketName(P.bucket)}. Record it anyway?`, ok: 'Record anyway', danger: true }))) return;
+  const items = c.ok.map((i) => ({ name: i.name.trim() || 'Item', price: i.c, taxed: i.taxed }));
+  const title = P.store.trim() || (items.length <= 2 ? items.map((i) => i.name).join(' + ') : `${items[0].name} + ${items.length - 1} more`);
+  upsertTxn({
+    id: P.editId || uid(), type: 'expense', ts: P.ts || Date.now(), amount: c.total, title, store: P.store.trim(), items,
+    tax: c.tax, rate: c.rate, tendered: Number.isNaN(c.tendered) ? null : c.tendered, bucket: P.bucket, history: P.history, updated: Date.now()
+  });
+  await saveBudget();
+  const msg = P.history ? 'Added to history' : `Recorded ${money(c.total)}`;
+  P = null; await dropPlanDraft();
+  toast(msg); go('budget');
+}
+
+/* ---------- Budget actions ---------- */
+Object.assign(actions, {
+  budgetSetup: () => openIncome({ setup: true }),
+  addIncome: () => openIncome(),
+  planNew: () => { S.planFrom = currentRoute().name; go('plan'); },
+  editBuckets: () => openBuckets(),
+  coins: () => openCoins(),
+  budgetMore: () => { S.budgetAll = !S.budgetAll; render(); },
+  budgetCSV: () => { download(`sonder-budget-${todayKey()}.csv`, budgetCSV(), 'text/csv'); toast('Exported'); },
+  txOpen: (t) => {
+    const x = S.budget.txns.find((q) => q.id === t.dataset.id);
+    if (!x) return;
+    const inc = x.type === 'income';
+    const row = (a, b) => `<div class="sumrow"><span>${a}</span><b>${b}</b></div>`;
+    const lines = inc
+      ? Object.entries(x.alloc || {}).filter(([, c]) => c).map(([bid, c]) => row(esc(bucketName(bid)), money(c))).join('')
+      : `${(x.items || []).map((i) => row(`${esc(i.name)}${i.taxed ? '' : ' <em>(no tax)</em>'}`, money(i.price))).join('')}
+         ${x.tax ? row('Tax', money(x.tax)) : ''}
+         ${x.tendered != null ? row('Paid with', money(x.tendered)) + row('Change', money(x.tendered - x.amount)) : ''}`;
+    const el = openSheet(`<div class="hd"><h2>${esc(x.title)}</h2><span class="tag">${inc ? '+' : '\u2212'}${money(x.amount)}</span></div>
+      <p class="sub" style="margin:-8px 0 12px">${esc(fmtStamp(x.ts))}${inc ? '' : ` \u00B7 from ${esc(bucketName(x.bucket))}`}${x.history ? ' \u00B7 history only' : ''}</p>
+      <div>${lines}</div>
+      <button class="btn-primary" data-edit style="margin-top:18px">Edit</button>
+      <button class="btn-ghost wide" data-del style="margin-top:10px;padding:14px;color:var(--danger)">Delete</button>`);
+    el.querySelector('[data-edit]').onclick = () => { closeSheet(); if (inc) openIncome({ id: x.id }); else { S.planFrom = 'budget'; go(`plan/${x.id}`); } };
+    el.querySelector('[data-del]').onclick = async () => {
+      closeSheet();
+      if (await confirmSheet({ title: 'Delete this record?', text: 'Your goal balances will update. This can\u2019t be undone.', ok: 'Delete', danger: true })) {
+        S.budget.txns = S.budget.txns.filter((q) => q.id !== x.id); await saveBudget(); toast('Deleted'); render();
+      }
+    };
+  },
+  planBack: async () => {
+    if (P?.editId && P.dirty && !(await confirmSheet({ title: 'Discard changes?', text: 'Your edits to this purchase haven\u2019t been saved.', ok: 'Discard', danger: true }))) return;
+    const to = S.planFrom && S.planFrom !== 'plan' ? S.planFrom : 'budget';
+    P = null; go(to);
+  },
+  planClear: async () => {
+    const hasAny = P.items.some((i) => i.name.trim() || i.price.trim()) || P.store.trim();
+    if (hasAny && !(await confirmSheet({ title: 'Clear this plan?', text: 'The items you added will be removed.', ok: 'Clear', danger: true }))) return;
+    P = newPlan(); await dropPlanDraft(); render();
+  },
+  planDelete: async () => {
+    if (!(await confirmSheet({ title: 'Delete this purchase?', text: 'Your goal balances will update. This can\u2019t be undone.', ok: 'Delete', danger: true }))) return;
+    const id = P.editId; P = null;
+    S.budget.txns = S.budget.txns.filter((q) => q.id !== id); await saveBudget(); toast('Deleted'); go('budget');
+  },
+  planAdd: () => {
+    P.items.push({ id: uid(), name: '', price: '', taxed: true });
+    $('#planItems').innerHTML = planItemsHTML();
+    const ins = document.querySelectorAll('#planItems [data-f="name"]'); ins[ins.length - 1].focus();
+    paintPlan(); savePlanDraft();
+  },
+  planRemove: (t) => {
+    if (P.items.length > 1) P.items = P.items.filter((i) => i.id !== t.dataset.i);
+    else { P.items[0].name = ''; P.items[0].price = ''; }
+    $('#planItems').innerHTML = planItemsHTML(); paintPlan(); savePlanDraft();
+  },
+  planTax: (t) => {
+    const it = P.items.find((x) => x.id === t.dataset.i); if (!it) return;
+    it.taxed = !it.taxed; t.classList.toggle('on', it.taxed); t.setAttribute('aria-pressed', it.taxed);
+    paintPlan(); savePlanDraft();
+  },
+  planBucket: (t) => { P.bucket = t.dataset.id; paintPlan(); savePlanDraft(); },
+  planChip: (t) => { P.tendered = moneyIn(Number(t.dataset.v)); $('#plTender').value = P.tendered; paintPlan(); savePlanDraft(); },
+  planHist: () => { P.history = !P.history; paintPlan(); savePlanDraft(); },
+  planSave: () => savePlan()
+});
 
 document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');

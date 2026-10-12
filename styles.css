@@ -286,3 +286,51 @@ textarea.body { width: 100%; min-height: 55vh; background: var(--surface); borde
 .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; line-height: 1.45; }
 .note.warn { color: var(--danger); }
 .bkedit { border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 14px; }
+
+/* v1.4: appearance (variables are set from Account > Appearance) */
+.screen { padding: 28px var(--pad, 24px) 130px; }
+.editor { padding: 18px var(--pad, 20px) 130px; }
+.entry { margin-bottom: var(--gap, 12px); }
+.bk { margin-bottom: var(--gap, 12px); }
+.navbrand, .wideonly { display: none; }
+.ui-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.ui-sw { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; color: var(--muted); position: relative; cursor: pointer; }
+.ui-sw.on { border-color: var(--text); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ui-sw.custom { background: conic-gradient(#ff6b6b, #ffd36b, #6bff95, #6bd6ff, #b583ff, #ff6b6b); overflow: hidden; }
+.ui-sw.custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.ui-sw.custom span { color: #111; font-weight: 800; pointer-events: none; }
+.ui-range { width: 100%; accent-color: var(--accent); }
+.ui-prev { padding: 18px; margin-top: 14px; }
+.ui-prev .top { display: flex; justify-content: space-between; align-items: center; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.ui-prev h3 { margin: 0 0 6px; font-size: 17px; }
+.ui-prev p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+.ui-home .setrow { padding: 8px 14px; }
+.ui-home .setrow .t { white-space: normal; }
+.ui-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ui-color { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px 8px 8px; font-size: 14px; }
+.ui-color input { width: 38px; height: 38px; border: 0; padding: 0; background: none; border-radius: 10px; cursor: pointer; flex: none; }
+textarea.ui-css { width: 100%; min-height: 150px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; font: 13.5px/1.55 ui-monospace, Menlo, Consolas, monospace; resize: vertical; outline: 0; }
+
+/* v1.4: computer layout (side menu + wider page). Phones keep the bottom bar. */
+@media (min-width: 900px) {
+  body { padding-left: 232px; }
+  #app { max-width: var(--content-w, 820px); }
+  .screen { padding-bottom: 60px; }
+  .editor { padding-bottom: 60px; }
+  .nav { left: 0; top: 0; bottom: 0; transform: none; width: 232px; height: auto; border-radius: 0; border: 0; border-right: 1px solid var(--line); background: var(--surface); backdrop-filter: none; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 6px; padding: 24px 14px; }
+  .navbrand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 19px; padding: 0 12px 18px; order: -3; }
+  .navbrand i { width: 9px; height: 9px; border-radius: 50%; background: var(--text); display: block; }
+  .wideonly { display: block; }
+  .nav .it, .wideonly .it { flex-direction: row; gap: 14px; font-size: 15px; min-width: 0; width: 100%; padding: 12px 14px; border-radius: 14px; justify-content: flex-start; }
+  .nav .fab { order: -2; width: 100%; height: 48px; border-radius: 999px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 14px; box-shadow: none; }
+  .nav .fab::after { content: "New"; font-weight: 700; font-size: 15px; }
+  .nav.compact { height: auto; }
+  .toast { bottom: 36px; }
+  .sheet { bottom: auto; top: 50%; transform: translate(-50%, -50%); border-bottom: 1px solid var(--line); border-radius: 28px; max-height: 86vh; animation: pop .2s ease; }
+  .sheet .grab { display: none; }
+  @keyframes pop { from { opacity: 0; transform: translate(-50%, -48%); } }
+  .stats { gap: 16px; }
+  .banner { padding-left: 232px; }
+}
+.ui-home .toggle { display: block; }
+.ui-home .setrow > button { display: flex; align-items: center; }

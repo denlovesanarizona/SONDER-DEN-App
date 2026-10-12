@@ -1,12 +1,13 @@
 import { icon } from './icons.js';
 import { db, uid, MOODS, moodById, TAGS, DEFAULT_SETTINGS, DEFAULT_BUDGET, ICON_DIR } from './db.js';
+import { uiInit, uiApply, appearanceHTML, homeOrder, greeting } from './appearance.js';
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.4.0';
 const RELEASE_NOTES = [
-  'New Budget: split your money between goals, and track every purchase and income.',
-  'Plan a purchase: add up prices and tax before you buy, see your balance afterwards and the change you\u2019ll get back.',
-  'Purchases keep their line items, so you can look back at exactly what you bought. Back-date old ones as history.',
-  'Budget data is included in backups and has a CSV export.'
+  'New Appearance screen: accent colour, font, interface size, spacing, corner roundness, and animations.',
+  'Edit colours and add your own CSS directly in the app, with live preview. Copy a theme code to reuse your look on another device.',
+  'Customize Home: change the greeting, reorder sections, and hide the ones you don’t use.',
+  'Computer layout: on wide screens Sonder gets a side menu and a wider page. The phone layout is unchanged.'
 ];
 
 /* ---------- helpers ---------- */
@@ -107,6 +108,7 @@ function applyTheme() {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   const m = document.querySelector('meta[name="theme-color"]');
   if (m) m.content = dark ? '#0b0b0d' : '#f6f3ee';
+  uiApply();
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => S.settings.theme === 'system' && applyTheme());
 
@@ -236,9 +238,10 @@ let lastRouteName = null;
 function nav(active) {
   const it = (to, ic, label) => `<button class="it ${active === to ? 'on' : ''}" data-act="go" data-to="${to}">${icon(ic, 21)}<span>${label}</span></button>`;
   return `<nav class="nav">
+    <div class="navbrand"><i></i>Sonder</div>
     ${it('home', 'home', 'Home')}${it('timeline', 'book', 'Timeline')}
     <button class="fab" data-act="fab" aria-label="New">${icon('plus', 26)}</button>
-    ${it('insights', 'chart', 'Insights')}${it('account', 'user', 'Account')}
+    ${it('insights', 'chart', 'Insights')}<span class="wideonly">${it('budget', 'wallet', 'Budget')}</span>${it('account', 'user', 'Account')}
   </nav>`;
 }
 
@@ -254,6 +257,8 @@ function render() {
   else if (name === 'account') html = accountHTML();
   else if (name === 'budget') html = budgetHTML();
   else if (name === 'plan') html = planHTML(arg);
+  else if (name === 'plan') html = planHTML(arg);
+  else if (name === 'appearance') html = appearanceHTML();
   else html = homeHTML();
   app.innerHTML = html;
   if (name !== lastRouteName) {
@@ -276,22 +281,25 @@ const entryCard = (it) => {
 function homeHTML() {
   const sel = S.dayMood[todayKey()];
   const recent = S.items.filter((i) => i.kind === 'journal').slice(0, 3);
-  return `<div class="screen">
-    <div class="topbar"><div class="brand"><i></i>Sonder</div>
-      <button class="round" data-act="go" data-to="account" aria-label="Settings">${icon('gear', 19)}</button></div>
-    <h1>How are you, ${esc(S.settings.name)}?</h1>
-    <p class="sub">${esc(fmtLong(Date.now()))}</p>
-    <div class="eyebrow">Today’s resonance</div>
-    <div class="resonance">${MOODS.map((m) => `<button class="res ${sel === m.id ? 'sel' : ''}" data-act="dayMood" data-id="${m.id}"><span class="face">${mi(m)}</span>${m.label}</button>`).join('')}</div>
-    <div class="card reflect" style="margin-top:26px">
+  const sections = {
+    resonance: () => `<div class="eyebrow">Today’s resonance</div>
+    <div class="resonance">${MOODS.map((m) => `<button class="res ${sel === m.id ? 'sel' : ''}" data-act="dayMood" data-id="${m.id}"><span class="face">${mi(m)}</span>${m.label}</button>`).join('')}</div>`,
+    reflect: () => `<div class="card reflect" style="margin-top:26px">
       <div class="k">DAILY REFLECTION</div>
       <p class="q">“${esc(promptOfDay())}”</p>
       <button class="btn-ghost" data-act="new">${icon('pen', 17)}Write Today’s Entry</button>
-    </div>
-    ${moneyCard()}
-    <div class="row-between"><div class="eyebrow">Recent entries</div>
+    </div>`,
+    budget: () => moneyCard(),
+    recent: () => `<div class="row-between"><div class="eyebrow">Recent entries</div>
       <button class="link" data-act="viewAll">View All</button></div>
-    ${recent.length ? recent.map(entryCard).join('') : `<div class="card empty">Nothing here yet.<br>Tap <b>Write Today’s Entry</b> to start your journal.</div>`}
+    ${recent.length ? recent.map(entryCard).join('') : `<div class="card empty">Nothing here yet.<br>Tap <b>Write Today’s Entry</b> to start your journal.</div>`}`
+  };
+  return `<div class="screen">
+    <div class="topbar"><div class="brand"><i></i>Sonder</div>
+      <button class="round" data-act="go" data-to="account" aria-label="Settings">${icon('gear', 19)}</button></div>
+    <h1>${esc(greeting(S.settings))}</h1>
+    <p class="sub">${esc(fmtLong(Date.now()))}</p>
+    ${homeOrder(S.settings).map((id) => sections[id]()).join('')}
   </div>${nav('home')}`;
 }
 
@@ -530,7 +538,7 @@ function accountHTML() {
     <div class="card group">
       ${row('bell', 'Daily reminder', '', 'toggleReminder', tg(s.reminder))}
       ${s.reminder ? `<div class="setrow"><span class="ico">${icon('calendar', 18)}</span><span class="t">Remind me at</span><input type="time" id="remTime" value="${esc(s.reminderTime)}" style="background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:6px 10px;color:var(--text)"></div>` : ''}
-      ${row('moon', 'Appearance', { dark: 'Dark', light: 'Light', system: 'System' }[s.theme], 'appearance', chev)}
+      ${row('moon', 'Appearance', { dark: 'Dark', light: 'Light', system: 'System' }[s.theme] + (s.ui ? ' · custom' : ''), 'appearance', chev)}
       ${row('lock', 'App lock', '', 'toggleLock', tg(s.lockEnabled))}
     </div>
     <div class="eyebrow">Data</div>
@@ -592,7 +600,7 @@ function printPDF() {
   fr.onload = () => { fr.contentWindow.focus(); fr.contentWindow.print(); setTimeout(() => fr.remove(), 60000); };
 }
 async function backupJSON() {
-  const data = { app: 'sonder', version: 2, exported: new Date().toISOString(), settings: { name: S.settings.name, since: S.settings.since, theme: S.settings.theme }, dayMood: S.dayMood, items: S.items, budget: S.budget };
+  const data = { app: 'sonder', version: 2, exported: new Date().toISOString(), settings: { name: S.settings.name, since: S.settings.since, theme: S.settings.theme, ui: S.settings.ui || null }, dayMood: S.dayMood, items: S.items, budget: S.budget };
   download(`sonder-backup-${todayKey()}.json`, JSON.stringify(data, null, 2), 'application/json');
   await db.setMeta('lastBackup', Date.now());
   toast('Backup saved to your downloads');
@@ -612,7 +620,7 @@ function pickImport() {
       S.dayMood = { ...(data.dayMood || {}), ...S.dayMood };
       await saveDayMood();
       bn = await mergeBudget(data.budget);
-      if (data.settings?.since && data.settings.since < S.settings.since) { S.settings.since = data.settings.since; await saveSettings(); }
+      if (data.settings?.ui && !S.settings.ui) { S.settings.ui = data.settings.ui; await saveSettings(); }
       await loadAll(); closeSheet(); render();
       toast(`Imported ${n} item${n === 1 ? '' : 's'}${bn ? ` and ${bn} budget record${bn === 1 ? '' : 's'}` : ''}`);
     } catch { toast('That file isn’t a Sonder backup'); }
@@ -673,11 +681,7 @@ const actions = {
   },
   toggleReminder: async () => { S.settings.reminder = !S.settings.reminder; await saveSettings(); render(); },
   toggleLock: () => toggleLock(),
-  appearance: () => {
-    const opts = [['dark', 'Dark'], ['light', 'Light'], ['system', 'Match my phone']];
-    const el = openSheet(`<div class="hd"><h2>Appearance</h2></div><div class="menu">${opts.map(([v, l]) => `<button data-th="${v}"><span style="flex:1;text-align:left">${l}</span>${S.settings.theme === v ? `<span style="color:var(--accent)">${icon('check', 20)}</span>` : ''}</button>`).join('')}</div>`);
-    el.querySelectorAll('[data-th]').forEach((b) => b.onclick = async () => { S.settings.theme = b.dataset.th; await saveSettings(); applyTheme(); closeSheet(); render(); });
-  },
+  appearance: () => go('appearance'),
   exportSheet: () => {
     const el = openSheet(`<div class="hd"><h2>Export journal</h2></div><div class="menu">
       ${sheetRow('x-md', 'download', 'Markdown (.md)', 'Plain text you can open anywhere')}
@@ -1244,6 +1248,7 @@ function maybeNudge() {
 /* ---------- boot ---------- */
 async function boot() {
   await loadAll();
+  uiInit({ S, saveSettings, applyTheme, render, openSheet, closeSheet, toast, confirmSheet, nav });
   applyTheme();
   if (S.settings.lockEnabled) unlock();
   render();

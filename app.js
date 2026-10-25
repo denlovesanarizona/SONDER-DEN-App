@@ -1,13 +1,21 @@
 import { icon } from './icons.js';
 import { db, uid, MOODS, moodById, TAGS, DEFAULT_SETTINGS, DEFAULT_BUDGET, ICON_DIR } from './db.js';
-import { uiInit, uiApply, appearanceHTML, homeOrder, greeting } from './appearance.js';
+import { uiInit, uiApply, appearanceHTML, homeOrder, greeting, playSplash } from './appearance.js';
+import { modulesInit, moduleRoute, moduleHTML, moduleMount, homeWidgetHTML, budgetPlusHTML, catChipsHTML, modulesBackup, modulesRestore, modulesErase } from './modules.js';
+import { sanitizeHTML, plainToHtml, plainToBlocks, htmlToText, htmlToMd, hasFormatting, toolbarHTML, bindRich } from './editor.js';
+import { uxInit, uxSave, uxScroll } from './ux.js';
+import { initUpdates, checkForUpdates } from './updater.js';
 
-export const VERSION = '1.4.0';
+export const VERSION = '1.5.0';
 const RELEASE_NOTES = [
-  'New Appearance screen: accent colour, font, interface size, spacing, corner roundness, and animations.',
-  'Edit colours and add your own CSS directly in the app, with live preview. Copy a theme code to reuse your look on another device.',
-  'Customize Home: change the greeting, reorder sections, and hide the ones you don’t use.',
-  'Computer layout: on wide screens Sonder gets a side menu and a wider page. The phone layout is unchanged.'
+  'Search: one box for your journal, quick logs, to-dos, library and budget, with highlights and filters.',
+  'Journal editor: bold, italic, underline, strikethrough, headings, lists, quotes and highlights. Typing "# " or "- " also works.',
+  'New To-do lists, and a Library for what you read and watch, your collection, and your wishlist (plan a purchase from it).',
+  'Budget: spending categories with a monthly breakdown, and recurring income reminders.',
+  'Home widgets: quick links, on this day, streak, this week, to-do, reading, wishlist. Pick them in Appearance.',
+  'Computer: Timeline shows your entries on the left and the one you pick on the right.',
+  'Fixes: app text can\u2019t be selected by accident, smoother scrolling, the bottom bar hides while you scroll, and you return to where you were.',
+  'A short startup animation (turn it off in Appearance).'
 ];
 
 /* ---------- helpers ---------- */
@@ -240,35 +248,37 @@ function nav(active) {
   return `<nav class="nav">
     <div class="navbrand"><i></i>Sonder</div>
     ${it('home', 'home', 'Home')}${it('timeline', 'book', 'Timeline')}
+    <span class="wideonly">${it('search', 'search', 'Search')}${it('todo', 'todo', 'To-do')}${it('library', 'books', 'Library')}${it('budget', 'wallet', 'Budget')}</span>
     <button class="fab" data-act="fab" aria-label="New">${icon('plus', 26)}</button>
-    ${it('insights', 'chart', 'Insights')}<span class="wideonly">${it('budget', 'wallet', 'Budget')}</span>${it('account', 'user', 'Account')}
+    ${it('insights', 'chart', 'Insights')}${it('account', 'user', 'Account')}
   </nav>`;
 }
 
 function render() {
   const { name, arg } = currentRoute();
   const app = $('#app');
+  const y0 = window.scrollY;
   if (name !== 'edit') E = null;
   if (name !== 'plan') P = null;
   let html;
   if (name === 'edit') { html = editorHTML(arg); }
+  else if (moduleRoute(name)) html = moduleHTML(name, arg);
   else if (name === 'timeline') html = timelineHTML();
   else if (name === 'insights') html = insightsHTML();
   else if (name === 'account') html = accountHTML();
   else if (name === 'budget') html = budgetHTML();
   else if (name === 'plan') html = planHTML(arg);
-  else if (name === 'plan') html = planHTML(arg);
   else if (name === 'appearance') html = appearanceHTML();
   else html = homeHTML();
   app.innerHTML = html;
-  if (name !== lastRouteName) {
-    window.scrollTo(0, 0); lastRouteName = name;
-    app.firstElementChild?.classList.add('enter');
-  }
+  const changed = name !== lastRouteName;
+  if (changed) { lastRouteName = name; app.firstElementChild?.classList.add('enter'); }
+  uxScroll(name, changed, y0);
   if (name === 'edit') mountEditor();
   if (name === 'plan') mountPlan();
+  moduleMount(name);
 }
-window.addEventListener('hashchange', () => { closeSheet(); render(); });
+window.addEventListener('hashchange', () => { uxSave(); closeSheet(); render(); });
 
 /* ---------- Home ---------- */
 const entryCard = (it) => {
@@ -296,16 +306,18 @@ function homeHTML() {
   };
   return `<div class="screen">
     <div class="topbar"><div class="brand"><i></i>Sonder</div>
-      <button class="round" data-act="go" data-to="account" aria-label="Settings">${icon('gear', 19)}</button></div>
+      <div style="display:flex;gap:8px"><button class="round" data-act="go" data-to="search" aria-label="Search">${icon('search', 19)}</button>
+      <button class="round" data-act="go" data-to="account" aria-label="Settings">${icon('gear', 19)}</button></div></div>
     <h1>${esc(greeting(S.settings))}</h1>
     <p class="sub">${esc(fmtLong(Date.now()))}</p>
-    ${homeOrder(S.settings).map((id) => sections[id]()).join('')}
+    ${homeOrder(S.settings).map((id) => (sections[id] ? sections[id]() : homeWidgetHTML(id))).join('')}
   </div>${nav('home')}`;
 }
 
 /* ---------- Timeline ---------- */
 function timelineHTML() {
   const f = S.filter;
+  const selId = S.items.some((i) => i.id === S.sel) ? S.sel : S.items.find((i) => i.kind === 'journal')?.id;
   let list = S.items.filter((i) => f === 'all' || (f === 'journal' ? i.kind === 'journal' : i.kind === 'log'));
   const years = [...new Set(S.items.map((i) => new Date(i.ts).getFullYear()))].sort((a, b) => b - a);
   if (S.jy) list = list.filter((i) => String(new Date(i.ts).getFullYear()) === S.jy);
@@ -320,13 +332,13 @@ function timelineHTML() {
   const row = (it, last) => {
     const m = moodById(it.mood);
     const inner = it.kind === 'journal'
-      ? `<button class="card jrow" data-act="edit" data-id="${it.id}">
+      ? `<button class="card jrow${it.id === selId ? ' sel' : ''}" data-act="edit" data-id="${it.id}">
            <div class="top"><span>Journal</span>${m ? `<span class="tag mood">${mi(m)} ${m.label}</span>` : ''}</div>
            <h3>${esc(it.title || 'Untitled')}</h3><p>${esc(it.body)}</p></button>`
       : `<button class="card logrow${it.summary ? ' summary' : ''}" data-act="editLog" data-id="${it.id}"><span>${esc(it.body)}</span>${it.tag ? `<span class="tag">${esc(it.tag)}</span>` : ''}</button>`;
     return `<div class="tl ${it.kind} ${last ? 'last' : ''}"><div class="time">${esc(it.summary ? (it.approx || 'Summary') : fmtTime(it.ts))}</div><div class="rail"><i class="dot"></i></div><div class="body">${inner}</div></div>`;
   };
-  return `<div class="screen">
+  return `<div class="screen"><div class="split"><div class="tlcol">
     <h1>Timeline</h1><p class="sub">Everything, in order</p>
     <div class="card logbar"><input id="logInput" placeholder="What’s happening right now?" enterkeyhint="done" autocomplete="off"><button data-act="logFromBar">Log</button></div>
     <div class="filters">
@@ -338,7 +350,16 @@ function timelineHTML() {
     </div>` : ''}
     ${groups.length ? groups.map((g) => `<div class="daylabel">${esc(dayHeading(g.k))}</div>${g.items.map((it, i) => row(it, i === g.items.length - 1)).join('')}`).join('')
       : `<div class="empty">${S.items.length ? 'Nothing matches this filter.' : 'Your timeline is empty.<br>Log what’s happening, or write a journal entry.'}</div>`}
-  </div>${nav('timeline')}`;
+  </div><aside class="reader">${readerHTML(selId)}</aside></div></div>${nav('timeline')}`;
+}
+
+function readerHTML(id) {
+  const it = S.items.find((i) => i.id === id && i.kind === 'journal');
+  if (!it) return '<div class="reader-empty">Select an entry to read it here</div>';
+  const m = moodById(it.mood);
+  return `<div class="reader-top"><span>${esc(fmtStamp(it.ts))}</span><button class="btn-ghost" data-act="edit" data-id="${it.id}" data-open="1" style="padding:8px 18px">Edit</button></div>
+    ${m ? `<span class="tag mood">${mi(m)} ${m.label}</span>` : ''}
+    <h2>${esc(it.title || 'Untitled')}</h2><div class="rich-view">${it.html ? sanitizeHTML(it.html) : plainToHtml(it.body)}</div>`;
 }
 
 /* ---------- Quick log sheet ---------- */
@@ -386,9 +407,9 @@ function startEditor(arg) {
   if (E && E.key === arg) return;
   if (arg && arg !== 'new') {
     const it = S.items.find((i) => i.id === arg);
-    if (it) { E = { key: arg, id: it.id, isNew: false, ts: it.ts, title: it.title || '', body: it.body, mood: it.mood || '', dirty: false }; return; }
+    if (it) { E = { key: arg, id: it.id, isNew: false, ts: it.ts, title: it.title || '', body: it.body, html: it.html || plainToBlocks(it.body), mood: it.mood || '', dirty: false }; return; }
   }
-  E = { key: 'new', id: uid(), isNew: true, ts: Date.now(), title: '', body: '', mood: S.dayMood[todayKey()] || '', dirty: false };
+  E = { key: 'new', id: uid(), isNew: true, ts: Date.now(), title: '', body: '', html: '', mood: S.dayMood[todayKey()] || '', dirty: false };
 }
 function editorHTML(arg) {
   startEditor(arg);
@@ -408,25 +429,26 @@ function editorHTML(arg) {
     <div class="moods">${MOODS.map((m) => `<button data-mood="${m.id}" class="${E.mood === m.id ? 'sel' : ''}" aria-label="${m.label}" title="${m.label}">${mi(m)}</button>`).join('')}</div>
     <div class="label" style="margin-top:16px">Entry title</div>
     <input class="field" id="edTitle" placeholder="Entry title…" value="${esc(E.title)}" autocomplete="off">
-    <textarea class="body" id="edBody" placeholder="What’s on your mind?">${esc(E.body)}</textarea>
+    <div class="rich" id="edBody" contenteditable="true" role="textbox" aria-multiline="true" data-ph="What’s on your mind?">${sanitizeHTML(E.html) || '<div><br></div>'}</div>
     <div class="saved-hint" id="edHint">${E.isNew ? 'Drafts save automatically' : ''}</div>
-  </div>`;
+  </div>${toolbarHTML()}`;
 }
 let draftTimer;
 function mountEditor() {
   const $t = $('#edTitle'), $b = $('#edBody');
   const touch = () => {
-    E.title = $t.value; E.body = $b.value; E.dirty = true;
+    E.title = $t.value; E.html = sanitizeHTML($b.innerHTML); E.body = htmlToText(E.html); E.dirty = true;
     if (E.isNew) {
       clearTimeout(draftTimer);
       draftTimer = setTimeout(async () => {
-        if (!E.title && !E.body) return db.delMeta('draft');
-        await db.setMeta('draft', { ts: E.ts, title: E.title, body: E.body, mood: E.mood });
+        if (!E.title && !E.body.trim()) return db.delMeta('draft');
+        await db.setMeta('draft', { ts: E.ts, title: E.title, body: E.body, html: E.html, mood: E.mood });
         const h = $('#edHint'); if (h) h.textContent = 'Draft saved';
       }, 600);
     }
   };
-  $t.addEventListener('input', touch); $b.addEventListener('input', touch);
+  bindRich($b, touch);
+  $t.addEventListener('input', touch);
   document.querySelectorAll('[data-mood]').forEach((b) => b.addEventListener('click', () => {
     E.mood = E.mood === b.dataset.mood ? '' : b.dataset.mood; E.dirty = true;
     document.querySelectorAll('[data-mood]').forEach((x) => x.classList.toggle('sel', x.dataset.mood === E.mood));
@@ -443,7 +465,9 @@ function mountEditor() {
   if (E.isNew && !E.title && !E.body) {
     db.getMeta('draft').then((d) => {
       if (d && (d.title || d.body) && E && E.isNew && !E.body && !E.title) {
-        E.ts = d.ts || E.ts; E.mood = d.mood || E.mood; $t.value = E.title = d.title || ''; $b.value = E.body = d.body || '';
+        E.ts = d.ts || E.ts; E.mood = d.mood || E.mood; $t.value = E.title = d.title || '';
+        E.html = sanitizeHTML(d.html || plainToBlocks(d.body || '')); E.body = htmlToText(E.html);
+        $b.innerHTML = E.html; $b.classList.toggle('is-empty', !$b.textContent.trim());
         $('#edDateText').textContent = fmtStamp(E.ts); $('#edDateInput').value = toLocalInput(E.ts);
         document.querySelectorAll('[data-mood]').forEach((x) => x.classList.toggle('sel', x.dataset.mood === E.mood));
         toast('Draft restored');
@@ -464,7 +488,9 @@ async function saveEditor() {
   const first = body.split(/\n/)[0];
   const finalTitle = title || (first.length > 42 ? first.slice(0, 40).trim() + '…' : first) || 'Untitled';
   const old = S.items.find((i) => i.id === E.id);
-  await saveItem({ ...(old || {}), id: E.id, kind: 'journal', ts: E.ts, title: finalTitle, body, mood: E.mood });
+  const rec = { ...(old || {}), id: E.id, kind: 'journal', ts: E.ts, title: finalTitle, body, mood: E.mood };
+  if (hasFormatting(E.html)) rec.html = E.html; else delete rec.html;
+  await saveItem(rec);
   if (E.mood && dayKey(E.ts) === todayKey()) { S.dayMood[todayKey()] = E.mood; await saveDayMood(); }
   clearTimeout(draftTimer);
   if (E.isNew) await db.delMeta('draft');
@@ -573,7 +599,7 @@ function toMarkdown() {
     if (k !== lastDay) { out += `\n## ${keyToDate(k).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}\n\n`; lastDay = k; }
     if (it.kind === 'journal') {
       const m = moodById(it.mood);
-      out += `### ${it.title || 'Untitled'}\n*${fmtTime(it.ts)}${m ? ` · ${m.label}` : ''}*\n\n${it.body}\n\n`;
+      out += `### ${it.title || 'Untitled'}\n*${fmtTime(it.ts)}${m ? ` · ${m.label}` : ''}*\n\n${it.html ? htmlToMd(it.html) : it.body}\n\n`;
     } else out += `- ${(it.summary ? (it.approx || 'Summary') : fmtTime(it.ts))} — ${it.body}${it.tag ? ` _(${it.tag})_` : ''}\n`;
   }
   return out;
@@ -585,13 +611,13 @@ function printPDF() {
     if (k !== lastDay) { body += `<h2>${esc(keyToDate(k).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))}</h2>`; lastDay = k; }
     if (it.kind === 'journal') {
       const m = moodById(it.mood);
-      body += `<h3>${esc(it.title || 'Untitled')}</h3><div class="meta">${esc(fmtTime(it.ts))}${m ? ' · ' + esc(m.label) : ''}</div><p>${esc(it.body).replace(/\n/g, '<br>')}</p>`;
+      body += `<h3>${esc(it.title || 'Untitled')}</h3><div class="meta">${esc(fmtTime(it.ts))}${m ? ' · ' + esc(m.label) : ''}</div><div class="rv">${it.html ? sanitizeHTML(it.html) : esc(it.body).replace(/\n/g, '<br>')}</div>`;
     } else body += `<div class="log">${esc((it.summary ? (it.approx || 'Summary') : fmtTime(it.ts)))} — ${esc(it.body)}${it.tag ? ` <span>(${esc(it.tag)})</span>` : ''}</div>`;
   }
   const doc = `<!doctype html><meta charset="utf-8"><title>Sonder journal</title><style>
     body{font:12pt/1.55 Georgia,serif;color:#111;max-width:680px;margin:0 auto;padding:24px}
     h1{font-size:22pt;margin:0 0 4px} h2{font-size:13pt;margin:26px 0 8px;border-bottom:1px solid #ccc;padding-bottom:4px;page-break-after:avoid}
-    h3{font-size:12.5pt;margin:14px 0 2px} .meta{color:#777;font-size:10pt;margin-bottom:6px} p{margin:0 0 8px} .log{margin:3px 0;color:#333} .log span{color:#888}
+    h3{font-size:12.5pt;margin:14px 0 2px} .meta{color:#777;font-size:10pt;margin-bottom:6px} p{margin:0 0 8px} .rv{margin:0 0 8px} .rv blockquote{border-left:3px solid #ccc;margin:6px 0;padding-left:10px;color:#444} .rv mark{background:#ffe9a8} .log{margin:3px 0;color:#333} .log span{color:#888}
   </style><h1>Sonder journal</h1><div class="meta">Exported ${esc(fmtFull(Date.now()))}</div>${body}`;
   const fr = document.createElement('iframe');
   fr.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
@@ -600,7 +626,7 @@ function printPDF() {
   fr.onload = () => { fr.contentWindow.focus(); fr.contentWindow.print(); setTimeout(() => fr.remove(), 60000); };
 }
 async function backupJSON() {
-  const data = { app: 'sonder', version: 2, exported: new Date().toISOString(), settings: { name: S.settings.name, since: S.settings.since, theme: S.settings.theme, ui: S.settings.ui || null }, dayMood: S.dayMood, items: S.items, budget: S.budget };
+  const data = { app: 'sonder', version: 2, exported: new Date().toISOString(), settings: { name: S.settings.name, since: S.settings.since, theme: S.settings.theme, ui: S.settings.ui || null }, dayMood: S.dayMood, items: S.items, budget: S.budget, ...modulesBackup() };
   download(`sonder-backup-${todayKey()}.json`, JSON.stringify(data, null, 2), 'application/json');
   await db.setMeta('lastBackup', Date.now());
   toast('Backup saved to your downloads');
@@ -620,6 +646,7 @@ function pickImport() {
       S.dayMood = { ...(data.dayMood || {}), ...S.dayMood };
       await saveDayMood();
       bn = await mergeBudget(data.budget);
+      bn += await modulesRestore(data);
       if (data.settings?.ui && !S.settings.ui) { S.settings.ui = data.settings.ui; await saveSettings(); }
       await loadAll(); closeSheet(); render();
       toast(`Imported ${n} item${n === 1 ? '' : 's'}${bn ? ` and ${bn} budget record${bn === 1 ? '' : 's'}` : ''}`);
@@ -641,17 +668,25 @@ async function openBackupSheet() {
 /* ---------- actions ---------- */
 const actions = {
   go: (t) => go(t.dataset.to),
-  edit: (t) => { S.from = currentRoute().name; E = null; go(`edit/${t.dataset.id}`); },
+  edit: (t) => {
+    const it = S.items.find((i) => i.id === t.dataset.id);
+    if (!t.dataset.open && it && it.kind === 'journal' && currentRoute().name === 'timeline' && matchMedia('(min-width: 1100px)').matches) { S.sel = it.id; render(); return; }
+    S.from = currentRoute().name; E = null; go(`edit/${t.dataset.id}`);
+  },
   new: () => { S.from = currentRoute().name; E = null; go('edit/new'); },
   viewAll: () => { S.filter = 'journal'; go('timeline'); },
   fab: () => {
     const el = openSheet(`<div class="menu">
       ${sheetRow('fabEntry', 'pen', 'Write a journal entry', 'Longer thoughts, with a mood')}
       ${sheetRow('fabLog', 'plus', 'Quick log', 'One line about what just happened')}
-      ${sheetRow('fabPlan', 'cart', 'Plan a purchase', 'Add up prices and tax before you buy')}</div>`);
+      ${sheetRow('fabPlan', 'cart', 'Plan a purchase', 'Add up prices and tax before you buy')}
+      ${sheetRow('fabTodo', 'todo', 'Add a to-do', 'Something you need to get done')}
+      ${sheetRow('fabLib', 'books', 'Add to library', 'A book, show, manga volume or wishlist item')}</div>`);
     el.querySelector('[data-act="fabEntry"]').onclick = () => { closeSheet(); actions.new(); };
     el.querySelector('[data-act="fabLog"]').onclick = () => { closeSheet(); openLog(); };
     el.querySelector('[data-act="fabPlan"]').onclick = () => { closeSheet(); actions.planNew(); };
+    el.querySelector('[data-act="fabTodo"]').onclick = () => { closeSheet(); go('todo'); setTimeout(() => document.getElementById('tdIn')?.focus(), 200); };
+    el.querySelector('[data-act="fabLib"]').onclick = () => { closeSheet(); go('library'); setTimeout(() => document.querySelector('[data-lb="new"]')?.click(), 200); };
   },
   dayMood: async (t) => {
     const k = todayKey();
@@ -708,16 +743,12 @@ const actions = {
       <p style="margin-bottom:6px"><b style="color:var(--text)">What\u2019s new in v${VERSION}</b></p>
       <ul>${RELEASE_NOTES.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>
       <button class="btn-primary" id="chk">Check for updates</button>`);
-    $('#chk', el).onclick = async () => {
-      const reg = await navigator.serviceWorker?.getRegistration();
-      if (!reg) { toast('Updates are checked when installed over HTTPS'); return; }
-      await reg.update(); toast('You’re on the latest version unless a banner appears');
-    };
+    $('#chk', el).onclick = (e) => checkForUpdates(e.currentTarget);
   },
   eraseAll: async () => {
     if (!(await confirmSheet({ title: 'Erase everything?', text: 'This permanently deletes every entry and setting on this device. Export a backup first if you want to keep anything.', ok: 'Erase all data', danger: true }))) return;
     await db.clearItems(); await db.delMeta('settings'); await db.delMeta('dayMood'); await db.delMeta('draft');
-    await db.delMeta('budget'); await db.delMeta('budgetPlan'); S.planDraft = null; P = null;
+    await db.delMeta('budget'); await db.delMeta('budgetPlan'); S.planDraft = null; P = null; await modulesErase();
     E = null; await loadAll(); applyTheme(); toast('All data erased'); go('home'); render();
   }
 };
@@ -778,7 +809,7 @@ function txRow(t) {
   const where = inc ? (t.only ? bucketName(t.only) : 'Split') : bucketName(t.bucket);
   const n = !inc && t.items?.length > 1 ? ` \u00B7 ${t.items.length} items` : '';
   return `<button class="card tx${t.history ? ' hist' : ''}" data-act="txOpen" data-id="${t.id}">
-    <span class="l"><b>${esc(t.title)}</b><span>${esc(fmtShort(t.ts))} \u00B7 ${esc(where)}${n}${t.history ? ' \u00B7 history' : ''}</span></span>
+    <span class="l"><b>${esc(t.title)}</b><span>${esc(fmtShort(t.ts))} \u00B7 ${esc(where)}${t.cat ? ` \u00B7 ${esc(t.cat)}` : ''}${n}${t.history ? ' \u00B7 history' : ''}</span></span>
     <span class="a ${inc ? 'in' : ''}">${inc ? '+' : '\u2212'}${money(t.amount)}</span></button>`;
 }
 function budgetHTML() {
@@ -818,6 +849,7 @@ function budgetHTML() {
       <div class="card stat"><b>${money(inM)}</b><span>Income</span></div>
       <div class="card stat"><b>${money(outM)}</b><span>Spent</span></div>
       <div class="card stat"><b>${exp.length}</b><span>Purchases</span></div></div>
+    ${budgetPlusHTML()}
     <div class="row-between"><div class="eyebrow">Activity</div>${B.txns.length ? '<button class="link" data-act="budgetCSV">Export CSV</button>' : ''}</div>
     ${list.length ? list.map(txRow).join('') : '<div class="card empty">No activity yet.<br>Plan a purchase or add income to begin.</div>'}
     ${B.txns.length > 12 ? `<button class="link" data-act="budgetMore" style="display:block;margin:6px auto 0">${S.budgetAll ? 'Show less' : `Show all ${B.txns.length}`}</button>` : ''}
@@ -996,7 +1028,7 @@ async function mergeBudget(inc) {
 let P = null, planTimer;
 const newPlan = () => ({
   key: 'new', editId: null, store: '', items: [{ id: uid(), name: '', price: '', taxed: true }],
-  rate: String(S.budget.taxRate), taxExact: '', bucket: S.budget.buckets[0]?.id || '', tendered: '', ts: null, history: false, dirty: false
+  rate: String(S.budget.taxRate), taxExact: '', bucket: S.budget.buckets[0]?.id || '', tendered: '', ts: null, history: false, cat: '', dirty: false
 });
 function startPlan(arg) {
   if (P && P.key === (arg || 'new')) return;
@@ -1007,7 +1039,7 @@ function startPlan(arg) {
       P = {
         key: arg, editId: t.id, store: t.store || '', items: src.map((i) => ({ id: uid(), name: i.name, price: moneyIn(i.price), taxed: !!i.taxed })),
         rate: String(t.rate ?? S.budget.taxRate), taxExact: t.tax != null ? moneyIn(t.tax) : '', bucket: t.bucket,
-        tendered: t.tendered != null ? moneyIn(t.tendered) : '', ts: t.ts, history: !!t.history, dirty: false
+        tendered: t.tendered != null ? moneyIn(t.tendered) : '', ts: t.ts, history: !!t.history, cat: t.cat || '', dirty: false
       };
       return;
     }
@@ -1015,8 +1047,8 @@ function startPlan(arg) {
   P = S.planDraft && S.planDraft.items ? { ...newPlan(), ...S.planDraft, key: 'new', editId: null, dirty: false } : newPlan();
 }
 function planSnap() {
-  const { items, store, rate, taxExact, bucket, tendered, ts, history } = P;
-  return { items, store, rate, taxExact, bucket, tendered, ts, history };
+  const { items, store, rate, taxExact, bucket, tendered, ts, history, cat } = P;
+  return { items, store, rate, taxExact, bucket, tendered, ts, history, cat };
 }
 function savePlanDraft() {
   if (!P) return;
@@ -1051,6 +1083,12 @@ function planCalc() {
   return { ok, bad, sub, tax, rate, total, tendered, before, after, exactTax: !Number.isNaN(exact) };
 }
 
+function planWith(name, price) {
+  P = null;
+  S.planDraft = { ...newPlan(), items: [{ id: uid(), name, price: price ? moneyIn(price) : '', taxed: true }] };
+  S.planFrom = 'library'; go('plan');
+}
+
 const planItemsHTML = () => P.items.map((i) => `<div class="pitem">
   <input class="field" data-i="${i.id}" data-f="name" placeholder="Item" value="${esc(i.name)}" autocomplete="off">
   <input class="field" data-i="${i.id}" data-f="price" inputmode="decimal" placeholder="0.00" value="${esc(i.price)}" autocomplete="off">
@@ -1070,6 +1108,7 @@ function planHTML(arg) {
     <p class="sub" style="margin:4px 0 18px;line-height:1.5">Add everything in your cart. Nothing changes your balance until you tap \u201C${P.editId ? 'Save changes' : 'I bought it'}\u201D.</p>
     <div class="label">Store or title</div>
     <input class="field" id="plStore" placeholder="e.g. Barnes &amp; Noble" value="${esc(P.store)}" autocomplete="off">
+    ${catChipsHTML(P.cat)}
     <div class="label" style="margin-top:16px">Items</div>
     <div class="items" id="planItems">${planItemsHTML()}</div>
     <button class="btn-ghost wide" data-act="planAdd" style="margin-top:10px">${icon('plus', 16)}Add item</button>
@@ -1144,7 +1183,7 @@ async function savePlan() {
   const title = P.store.trim() || (items.length <= 2 ? items.map((i) => i.name).join(' + ') : `${items[0].name} + ${items.length - 1} more`);
   upsertTxn({
     id: P.editId || uid(), type: 'expense', ts: P.ts || Date.now(), amount: c.total, title, store: P.store.trim(), items,
-    tax: c.tax, rate: c.rate, tendered: Number.isNaN(c.tendered) ? null : c.tendered, bucket: P.bucket, history: P.history, updated: Date.now()
+    tax: c.tax, rate: c.rate, tendered: Number.isNaN(c.tendered) ? null : c.tendered, bucket: P.bucket, history: P.history, cat: P.cat || '', updated: Date.now()
   });
   await saveBudget();
   const msg = P.history ? 'Added to history' : `Recorded ${money(c.total)}`;
@@ -1215,6 +1254,7 @@ Object.assign(actions, {
     it.taxed = !it.taxed; t.classList.toggle('on', it.taxed); t.setAttribute('aria-pressed', it.taxed);
     paintPlan(); savePlanDraft();
   },
+  planCat: (t) => { P.cat = P.cat === t.dataset.v ? '' : t.dataset.v; document.querySelectorAll('[data-act="planCat"]').forEach((b) => b.classList.toggle('on', b.dataset.v === P.cat)); savePlanDraft(); },
   planBucket: (t) => { P.bucket = t.dataset.id; paintPlan(); savePlanDraft(); },
   planChip: (t) => { P.tendered = moneyIn(Number(t.dataset.v)); $('#plTender').value = P.tendered; paintPlan(); savePlanDraft(); },
   planHist: () => { P.history = !P.history; paintPlan(); savePlanDraft(); },
@@ -1249,21 +1289,17 @@ function maybeNudge() {
 async function boot() {
   await loadAll();
   uiInit({ S, saveSettings, applyTheme, render, openSheet, closeSheet, toast, confirmSheet, nav });
+  await modulesInit({
+    S, db, nav, render, go, openSheet, closeSheet, toast, confirmSheet, money, cents, moneyIn, uid, saveBudget, upsertTxn, splitCents, bucketName,
+    openLog: (id) => openLog({ id }), openTx: (id) => actions.txOpen({ dataset: { id } }), planWith,
+    availableCents: () => (S.budget.setup ? totalBalance() : null)
+  });
+  uxInit();
   applyTheme();
   if (S.settings.lockEnabled) unlock();
   render();
+  playSplash();
   maybeNudge();
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    const hadController = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!hadController) return;
-      const b = document.createElement('div');
-      b.className = 'banner';
-      b.innerHTML = 'A new version of Sonder is ready <button>Reload</button>';
-      b.querySelector('button').onclick = () => location.reload();
-      document.body.appendChild(b);
-    });
-  }
+  initUpdates({ confirmSheet, toast, version: VERSION, isDirty: () => !!(E && E.dirty) });
 }
 boot();

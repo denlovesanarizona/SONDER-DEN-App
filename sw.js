@@ -1,22 +1,40 @@
-// sw.js
 // Service worker: makes Sonder work offline and pick up updates.
 // To ship an update, change files and bump VERSION here (any byte change to this file triggers the update).
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const CACHE = `sonder-${VERSION}`;
 const SHELL = [
-  './', 'index.html', 'styles.css', 'app.js', 'db.js', 'icons.js', 'appearance.js',
+  './', 'index.html', 'styles.css', 'app.js', 'db.js', 'icons.js', 'appearance.js', 'editor.js', 'todo.js', 'library.js', 'search.js', 'budgetplus.js', 'widgets.js', 'modules.js', 'ux.js', 'updater.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png'
 ];
 
 // Mood icons are cached too, but a missing/misnamed one won't break the install.
 const MOOD_ICONS = ['lotus-flower', 'positivity', 'mirror', 'sun', 'sleep'].map((n) => `icons/${n}.png`);
 
+// A new version waits until you tap "Update now". The one exception: if the page that is open is an older Sonder that
+// can't ask you (it doesn't answer the question below), the new version takes over by itself like it used to.
+async function pageCanAsk() {
+  const pages = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  if (!pages.length) return false;
+  const answers = await Promise.all(pages.map((c) => new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = (e) => resolve(e.data === 'ok');
+    setTimeout(() => resolve(false), 600);
+    c.postMessage({ type: 'CAN_PROMPT' }, [ch.port2]);
+  })));
+  return answers.some(Boolean);
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE)
       .then((c) => c.addAll(SHELL).then(() => Promise.allSettled(MOOD_ICONS.map((u) => c.add(u)))))
-      .then(() => self.skipWaiting())
+      .then(() => pageCanAsk())
+      .then((canAsk) => { if (!canAsk) return self.skipWaiting(); })
   );
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {

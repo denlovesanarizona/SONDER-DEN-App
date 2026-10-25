@@ -16,12 +16,16 @@ const CORNERS = [['Sharp', 6], ['Soft', 12], ['Round', 18], ['Pill', 28]];
 const WIDTHS = [['Narrow', 680], ['Medium', 820], ['Wide', 1000]];
 const ACCENTS = [['Default', ''], ['Amber', '#d4a373'], ['Rose', '#e58aa0'], ['Coral', '#ff8a6b'], ['Sage', '#8fbf9f'], ['Mint', '#5fd1b0'], ['Sky', '#7fb2e5'], ['Lavender', '#b583ff']];
 const COLOR_VARS = [['bg', 'Background'], ['surface', 'Cards'], ['surface-2', 'Raised cards'], ['line', 'Borders'], ['text', 'Text'], ['muted', 'Soft text'], ['faint', 'Faint text'], ['accent', 'Accent'], ['violet', 'Links'], ['danger', 'Warnings']];
-const HOME_LABEL = { resonance: 'Today’s resonance', reflect: 'Daily reflection', budget: 'Budget card', recent: 'Recent entries' };
+const HOME_LABEL = {
+  resonance: 'Today’s resonance', reflect: 'Daily reflection', budget: 'Budget card', recent: 'Recent entries',
+  shortcuts: 'Quick links', onthisday: 'On this day', streak: 'Streak', week: 'This week chart', todo: 'To-do list', reading: 'Reading & watching', wishlist: 'Wishlist'
+};
+const HOME_OFF = new Set(['streak', 'week', 'todo', 'reading', 'wishlist']);   // new widgets start hidden, except Quick links and On this day
 
 const DEF = {
-  accent: null, font: 'sans', scale: 100, density: 'cozy', radius: 18, motion: true, content: 820,
+  accent: null, font: 'sans', scale: 100, density: 'cozy', radius: 18, motion: true, splash: true, content: 820,
   greeting: 'How are you, {name}?',
-  home: Object.keys(HOME_LABEL).map((id) => ({ id, on: true })),
+  home: Object.keys(HOME_LABEL).map((id) => ({ id, on: !HOME_OFF.has(id) })),
   vars: { dark: {}, light: {} }, css: ''
 };
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -31,7 +35,7 @@ export function uiNorm(u) {
   o.vars = { dark: { ...(u?.vars?.dark) }, light: { ...(u?.vars?.light) } };
   const seen = new Set(), h = [];
   for (const s of Array.isArray(o.home) ? o.home : []) if (HOME_LABEL[s?.id] && !seen.has(s.id)) { seen.add(s.id); h.push({ id: s.id, on: s.on !== false }); }
-  for (const id of Object.keys(HOME_LABEL)) if (!seen.has(id)) h.push({ id, on: true });
+  for (const id of Object.keys(HOME_LABEL)) if (!seen.has(id)) h.push({ id, on: !HOME_OFF.has(id) });
   o.home = h;
   return o;
 }
@@ -125,7 +129,8 @@ export function appearanceHTML() {
     ${pills('radius', CORNERS.map(([l, v]) => [l, v]), u.radius)}
     <div class="label" style="margin-top:16px">Width on a computer</div>
     ${pills('content', WIDTHS, u.content)}
-    <div class="card group" style="margin-top:16px"><button class="setrow" data-ui="motion"><span class="ico">${icon('moon', 18)}</span><span class="t">Animations</span>${tg(u.motion)}</button></div>
+    <div class="card group" style="margin-top:16px"><button class="setrow" data-ui="motion"><span class="ico">${icon('moon', 18)}</span><span class="t">Animations</span>${tg(u.motion)}</button>
+      <button class="setrow" data-ui="splash"><span class="ico">${icon('home', 18)}</span><span class="t">Startup animation</span>${tg(u.splash)}</button></div>
 
     <div class="eyebrow">Home screen</div>
     <div class="label">Greeting <span style="text-transform:none;letter-spacing:0">({name} is replaced by your name)</span></div>
@@ -160,6 +165,7 @@ const A = {
   radius: (t) => set({ radius: Number(t.dataset.v) }, true),
   content: (t) => set({ content: Number(t.dataset.v) }, true),
   motion: () => set({ motion: !getUI().motion }, true),
+  splash: () => set({ splash: !getUI().splash }, true),
   homeUp: (t) => moveHome(+t.dataset.i, -1),
   homeDown: (t) => moveHome(+t.dataset.i, 1),
   homeToggle: (t) => { const h = getUI().home; h[+t.dataset.i].on = !h[+t.dataset.i].on; return set({ home: h }, true); },
@@ -217,4 +223,20 @@ export function uiInit(ctx) {
     }
   });
   document.addEventListener('change', (e) => { if (e.target.dataset?.uiin === 'accentPick') X.render(); });
+}
+
+/* ---------- startup animation (plays once each time the app is opened) ---------- */
+export function playSplash() {
+  const u = getUI();
+  if (!u.motion || !u.splash || matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve();
+  try { if (sessionStorage.getItem('sonder-splash')) return Promise.resolve(); sessionStorage.setItem('sonder-splash', '1'); } catch {}
+  return new Promise((resolve) => {
+    const el = document.createElement('div');
+    el.className = 'splash';
+    el.innerHTML = '<div class="sp-mark"><i></i><span>Sonder</span></div>';
+    document.body.appendChild(el);
+    const done = () => { el.classList.add('out'); setTimeout(() => { el.remove(); resolve(); }, 380); };
+    el.addEventListener('click', done);
+    setTimeout(done, 1250);
+  });
 }

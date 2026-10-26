@@ -1,4 +1,4 @@
-// modules.js (v1.5): one door between app.js and the newer modules (search, to-do, library, widgets, budget extras).
+// modules.js (v1.5): one door between app.js and the newer modules (search, to-do, library, widgets, budget extras). Come on dude.
 import * as todo from './todo.js';
 import * as lib from './library.js';
 import * as search from './search.js';

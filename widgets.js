@@ -1,4 +1,4 @@
-// widgets.js (v1.5): the optional blocks on the Home screen. Turn them on, off and reorder them in Account > Appearance.
+// widgets.js (v1.5): the optional blocks on the Home screen. Turn them on, off and reorder them in Account > Appearance. New
 import { icon } from './icons.js';
 
 let C = null;

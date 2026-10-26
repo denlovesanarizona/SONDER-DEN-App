@@ -26,7 +26,10 @@ const P = {
   cart: '<circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2 3h3l2.6 12.4a1 1 0 0 0 1 .8h9.3a1 1 0 0 0 1-.8L21 7H6"/>',
   wallet: '<path d="M3 7a2 2 0 0 1 2-2h13v4"/><path d="M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2z"/><path d="M16 14h.01"/>',
   todo:  '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
-  books: '<rect x="4" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="18" rx="1"/><path d="m16.5 5.2 3.9 15.4"/>'
+  books: '<rect x="4" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="18" rx="1"/><path d="m16.5 5.2 3.9 15.4"/>',
+  chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/>',
+  send: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>'
 };
 
 export function icon(name, size = 20) {

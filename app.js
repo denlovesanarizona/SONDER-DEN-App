@@ -1,21 +1,19 @@
 import { icon } from './icons.js';
 import { db, uid, MOODS, moodById, TAGS, DEFAULT_SETTINGS, DEFAULT_BUDGET, ICON_DIR } from './db.js';
 import { uiInit, uiApply, appearanceHTML, homeOrder, greeting, playSplash } from './appearance.js';
-import { modulesInit, moduleRoute, moduleHTML, moduleMount, homeWidgetHTML, budgetPlusHTML, catChipsHTML, modulesBackup, modulesRestore, modulesErase } from './modules.js';
+import { modulesInit, moduleRoute, moduleHTML, moduleMount, homeWidgetHTML, budgetPlusHTML, catChipsHTML, modulesBackup, modulesRestore, modulesErase, startDebrief, aiEnabled } from './modules.js';
 import { sanitizeHTML, plainToHtml, plainToBlocks, htmlToText, htmlToMd, hasFormatting, toolbarHTML, bindRich } from './editor.js';
 import { uxInit, uxSave, uxScroll } from './ux.js';
 import { initUpdates, checkForUpdates } from './updater.js';
 
-export const VERSION = '1.5.0';
+export const VERSION = '1.6.0';
 const RELEASE_NOTES = [
-  'Search: one box for your journal, quick logs, to-dos, library and budget, with highlights and filters.',
-  'Journal editor: bold, italic, underline, strikethrough, headings, lists, quotes and highlights. Typing "# " or "- " also works.',
-  'New To-do lists, and a Library for what you read and watch, your collection, and your wishlist (plan a purchase from it).',
-  'Budget: spending categories with a monthly breakdown, and recurring income reminders.',
-  'Home widgets: quick links, on this day, streak, this week, to-do, reading, wishlist. Pick them in Appearance.',
-  'Computer: Timeline shows your entries on the left and the one you pick on the right.',
-  'Fixes: app text can\u2019t be selected by accident, smoother scrolling, the bottom bar hides while you scroll, and you return to where you were.',
-  'A short startup animation (turn it off in Appearance).'
+  'Companion: an AI you can talk to about your day. It runs on your own computer (or this device) and never uses a cloud service.',
+  'It can look back at your journal and remembers lasting facts about you. See and edit them in Account > Companion > Memories.',
+  'Talk about an entry: tap the chat button on an entry, or "Talk it out" right after saving.',
+  'Mark any entry "Keep private from AI" and the companion will never read it.',
+  'Companion settings: personality, reply length, how far back it reads, and where the model runs.',
+  'Updates: Sonder now checks, downloads, then asks "Update now" and reloads instantly.'
 ];
 
 /* ---------- helpers ---------- */
@@ -248,7 +246,7 @@ function nav(active) {
   return `<nav class="nav">
     <div class="navbrand"><i></i>Sonder</div>
     ${it('home', 'home', 'Home')}${it('timeline', 'book', 'Timeline')}
-    <span class="wideonly">${it('search', 'search', 'Search')}${it('todo', 'todo', 'To-do')}${it('library', 'books', 'Library')}${it('budget', 'wallet', 'Budget')}</span>
+    <span class="wideonly">${it('search', 'search', 'Search')}${it('todo', 'todo', 'To-do')}${it('library', 'books', 'Library')}${it('chat', 'chat', 'Talk')}${it('budget', 'wallet', 'Budget')}</span>
     <button class="fab" data-act="fab" aria-label="New">${icon('plus', 26)}</button>
     ${it('insights', 'chart', 'Insights')}${it('account', 'user', 'Account')}
   </nav>`;
@@ -407,9 +405,9 @@ function startEditor(arg) {
   if (E && E.key === arg) return;
   if (arg && arg !== 'new') {
     const it = S.items.find((i) => i.id === arg);
-    if (it) { E = { key: arg, id: it.id, isNew: false, ts: it.ts, title: it.title || '', body: it.body, html: it.html || plainToBlocks(it.body), mood: it.mood || '', dirty: false }; return; }
+    if (it) { E = { key: arg, id: it.id, isNew: false, ts: it.ts, title: it.title || '', body: it.body, html: it.html || plainToBlocks(it.body), mood: it.mood || '', noai: !!it.noai, dirty: false }; return; }
   }
-  E = { key: 'new', id: uid(), isNew: true, ts: Date.now(), title: '', body: '', html: '', mood: S.dayMood[todayKey()] || '', dirty: false };
+  E = { key: 'new', id: uid(), isNew: true, ts: Date.now(), title: '', body: '', html: '', mood: S.dayMood[todayKey()] || '', noai: false, dirty: false };
 }
 function editorHTML(arg) {
   startEditor(arg);
@@ -418,6 +416,7 @@ function editorHTML(arg) {
       <button class="round" data-act="edBack" aria-label="Back">${icon('back', 19)}</button>
       <span></span>
       <div style="display:flex;gap:8px">
+        ${E.isNew || E.noai || !aiEnabled() ? '' : `<button class="round" data-act="edTalk" aria-label="Talk about this entry">${icon('chat', 18)}</button>`}
         ${E.isNew ? '' : `<button class="round" data-act="edDelete" aria-label="Delete" style="color:var(--danger)">${icon('trash', 18)}</button>`}
         <button class="btn-ghost" data-act="edSave" style="padding:10px 18px">Save</button>
       </div>
@@ -430,6 +429,7 @@ function editorHTML(arg) {
     <div class="label" style="margin-top:16px">Entry title</div>
     <input class="field" id="edTitle" placeholder="Entry title…" value="${esc(E.title)}" autocomplete="off">
     <div class="rich" id="edBody" contenteditable="true" role="textbox" aria-multiline="true" data-ph="What’s on your mind?">${sanitizeHTML(E.html) || '<div><br></div>'}</div>
+    <button type="button" class="setrow" id="edNoAI" style="margin-top:14px;border:0"><span class="t" style="font-size:14px;color:var(--muted)">Keep private from AI</span><span class="toggle ${E.noai ? 'on' : ''}"></span></button>
     <div class="saved-hint" id="edHint">${E.isNew ? 'Drafts save automatically' : ''}</div>
   </div>${toolbarHTML()}`;
 }
@@ -448,6 +448,7 @@ function mountEditor() {
     }
   };
   bindRich($b, touch);
+  $('#edNoAI').addEventListener('click', () => { E.noai = !E.noai; E.dirty = true; $('#edNoAI .toggle').classList.toggle('on', E.noai); });
   $t.addEventListener('input', touch);
   document.querySelectorAll('[data-mood]').forEach((b) => b.addEventListener('click', () => {
     E.mood = E.mood === b.dataset.mood ? '' : b.dataset.mood; E.dirty = true;
@@ -490,11 +491,13 @@ async function saveEditor() {
   const old = S.items.find((i) => i.id === E.id);
   const rec = { ...(old || {}), id: E.id, kind: 'journal', ts: E.ts, title: finalTitle, body, mood: E.mood };
   if (hasFormatting(E.html)) rec.html = E.html; else delete rec.html;
+  if (E.noai) rec.noai = true; else delete rec.noai;
   await saveItem(rec);
   if (E.mood && dayKey(E.ts) === todayKey()) { S.dayMood[todayKey()] = E.mood; await saveDayMood(); }
   clearTimeout(draftTimer);
   if (E.isNew) await db.delMeta('draft');
-  E = null; toast('Saved'); go('timeline');
+  const savedId = rec.id, offer = aiEnabled() && !rec.noai;
+  E = null; toast('Saved', offer ? { label: 'Talk it out', fn: () => startDebrief(savedId) } : undefined); go('timeline');
 }
 
 /* ---------- Insights ---------- */
@@ -565,6 +568,7 @@ function accountHTML() {
       ${row('bell', 'Daily reminder', '', 'toggleReminder', tg(s.reminder))}
       ${s.reminder ? `<div class="setrow"><span class="ico">${icon('calendar', 18)}</span><span class="t">Remind me at</span><input type="time" id="remTime" value="${esc(s.reminderTime)}" style="background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:6px 10px;color:var(--text)"></div>` : ''}
       ${row('moon', 'Appearance', { dark: 'Dark', light: 'Light', system: 'System' }[s.theme] + (s.ui ? ' · custom' : ''), 'appearance', chev)}
+      ${row('chat', 'Companion', aiEnabled() ? 'On' : 'Off', 'aiSettings', chev)}
       ${row('lock', 'App lock', '', 'toggleLock', tg(s.lockEnabled))}
     </div>
     <div class="eyebrow">Data</div>
@@ -681,11 +685,13 @@ const actions = {
       ${sheetRow('fabLog', 'plus', 'Quick log', 'One line about what just happened')}
       ${sheetRow('fabPlan', 'cart', 'Plan a purchase', 'Add up prices and tax before you buy')}
       ${sheetRow('fabTodo', 'todo', 'Add a to-do', 'Something you need to get done')}
-      ${sheetRow('fabLib', 'books', 'Add to library', 'A book, show, manga volume or wishlist item')}</div>`);
+      ${sheetRow('fabLib', 'books', 'Add to library', 'A book, show, manga volume or wishlist item')}
+      ${sheetRow('fabTalk', 'chat', 'Talk it out', 'Vent or think out loud with your companion')}</div>`);
     el.querySelector('[data-act="fabEntry"]').onclick = () => { closeSheet(); actions.new(); };
     el.querySelector('[data-act="fabLog"]').onclick = () => { closeSheet(); openLog(); };
     el.querySelector('[data-act="fabPlan"]').onclick = () => { closeSheet(); actions.planNew(); };
     el.querySelector('[data-act="fabTodo"]').onclick = () => { closeSheet(); go('todo'); setTimeout(() => document.getElementById('tdIn')?.focus(), 200); };
+    el.querySelector('[data-act="fabTalk"]').onclick = () => { closeSheet(); go('chat'); };
     el.querySelector('[data-act="fabLib"]').onclick = () => { closeSheet(); go('library'); setTimeout(() => document.querySelector('[data-lb="new"]')?.click(), 200); };
   },
   dayMood: async (t) => {
@@ -717,6 +723,8 @@ const actions = {
   toggleReminder: async () => { S.settings.reminder = !S.settings.reminder; await saveSettings(); render(); },
   toggleLock: () => toggleLock(),
   appearance: () => go('appearance'),
+  aiSettings: () => go('ai'),
+  edTalk: () => { if (E && E.dirty) return toast('Save your changes first'); if (E) startDebrief(E.id); },
   exportSheet: () => {
     const el = openSheet(`<div class="hd"><h2>Export journal</h2></div><div class="menu">
       ${sheetRow('x-md', 'download', 'Markdown (.md)', 'Plain text you can open anywhere')}
@@ -1290,7 +1298,7 @@ async function boot() {
   await loadAll();
   uiInit({ S, saveSettings, applyTheme, render, openSheet, closeSheet, toast, confirmSheet, nav });
   await modulesInit({
-    S, db, nav, render, go, openSheet, closeSheet, toast, confirmSheet, money, cents, moneyIn, uid, saveBudget, upsertTxn, splitCents, bucketName,
+    moodLabel: (id) => (moodById(id) || {}).label || '', S, db, nav, render, go, openSheet, closeSheet, toast, confirmSheet, money, cents, moneyIn, uid, saveBudget, upsertTxn, splitCents, bucketName,
     openLog: (id) => openLog({ id }), openTx: (id) => actions.txOpen({ dataset: { id } }), planWith,
     availableCents: () => (S.budget.setup ? totalBalance() : null)
   });

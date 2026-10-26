@@ -25,6 +25,7 @@ const W = {
     <button class="card wl" data-act="go" data-to="search">${icon('search', 20)}<span>Search</span></button>
     <button class="card wl" data-act="go" data-to="todo">${icon('todo', 20)}<span>To-do</span></button>
     <button class="card wl" data-act="go" data-to="library">${icon('books', 20)}<span>Library</span></button>
+    <button class="card wl" data-act="go" data-to="chat">${icon('chat', 20)}<span>Talk</span></button>
     <button class="card wl" data-act="go" data-to="budget">${icon('wallet', 20)}<span>Budget</span></button></div>`,
 
   streak: () => {

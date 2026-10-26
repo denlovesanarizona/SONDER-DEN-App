@@ -1293,7 +1293,7 @@ function maybeNudge() {
   if (due && !wrote) toast('Time to write today’s entry', { label: 'Write', fn: () => actions.new() });
 }
 
-/* ---------- boot ---------- */
+/* ---------- boot (new) ---------- */
 async function boot() {
   await loadAll();
   uiInit({ S, saveSettings, applyTheme, render, openSheet, closeSheet, toast, confirmSheet, nav });

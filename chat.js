@@ -1,4 +1,4 @@
-// chat.js (v1.6): the Talk screen, Companion settings, Memories screen, and "talk about this entry".
+// chat.js (v1.6): the Talk screen, Companion settings, Memories screen, and "talk about this entry". Newy new new.
 import { icon } from './icons.js';
 import * as AI from './ai.js';
 

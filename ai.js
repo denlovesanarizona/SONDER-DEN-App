@@ -240,7 +240,7 @@ async function streamPC(messages, onToken, signal) {
 }
 
 export const deviceSupported = () => !!navigator.gpu;
-export async function loadDevice(onProgress) {
+async function loadDeviceOnce(onProgress) {
   if (!deviceSupported()) throw new Error('This browser has no WebGPU, so the on-device model can’t run here. Use “Your computer” mode instead.');
   if (engine && engineModel === A.deviceModel) return engine;
   let lib;
@@ -254,9 +254,27 @@ export async function loadDevice(onProgress) {
   engineModel = A.deviceModel;
   return engine;
 }
+let loading = null;
+const gpuFail = (e) => new Error(`The on-device model stopped while loading (${String((e && e.message) || e).slice(0, 80)}). This usually means the phone ran out of GPU memory. Close other apps and try again, or use a smaller model such as Qwen2.5-0.5B-Instruct-q4f32_1-MLC.`);
+export function loadDevice(onProgress) {
+  if (engine && engineModel === A.deviceModel) return Promise.resolve(engine);
+  if (loading) return loading;                       // never start two loads at once
+  loading = (async () => {
+    try { return await loadDeviceOnce(onProgress); }
+    catch (e) {
+      engine = null; engineModel = '';
+      if (/WebGPU|download|online/i.test(e.message || '')) throw e;
+      try { return await loadDeviceOnce(onProgress); }       // weights are cached by now, so one retry is quick
+      catch (e2) { engine = null; engineModel = ''; throw gpuFail(e2); }
+    } finally { loading = null; }
+  })();
+  return loading;
+}
 async function streamDevice(messages, onToken, signal) {
   const e = await loadDevice();
-  const it = await e.chat.completions.create({ messages, stream: true, temperature: A.temp, max_tokens: A.maxReply });
+  let it;
+  try { it = await e.chat.completions.create({ messages, stream: true, temperature: A.temp, max_tokens: A.maxReply }); }
+  catch (err) { engine = null; engineModel = ''; throw gpuFail(err); }
   let out = '';
   for await (const ch of it) {
     if (signal?.aborted) { try { e.interruptGenerate(); } catch {} throw new DOMException('Aborted', 'AbortError'); }
@@ -342,4 +360,12 @@ export async function restore(d) {
 export async function erase() {
   A = { ...DEFAULTS }; CH = { chats: [] }; MEM = { facts: [] };
   await C.db.delMeta('ai'); await C.db.delMeta('aiChats'); await C.db.delMeta('aiMem');
+}
+
+/* "remember that my sister is visiting" saves a memory straight away. Returns the saved text or ''. */
+export async function rememberFromMessage(text) {
+  const m = String(text).trim().match(/^(?:please\s+|can you\s+|could you\s+)?remember(?:\s+that|\s+this)?\s*[:,\-]?\s*["“]?(.{4,})/i);
+  if (!m) return '';
+  const fact = m[1].replace(/["”?]+\s*$/, '').trim();
+  return (await addFact(fact, 'chat')) ? fact : '';
 }

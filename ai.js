@@ -1,5 +1,5 @@
-// ai.js (v1.6): the companion's brain. No server of ours is involved: the model runs on YOUR computer (Ollama / LM Studio / llama.cpp) Come on dude.
-// or inside this device's browser. Chats, memories and settings live in IndexedDB (meta keys 'ai', 'aiChats', 'aiMem'). GAHHHHH.
+// ai.js (v1.6): the companion's brain. No server of ours is involved: the model runs on YOUR computer (Ollama / LM Studio / llama.cpp)
+// or inside this device's browser. Chats, memories and settings live in IndexedDB (meta keys 'ai', 'aiChats', 'aiMem').
 
 const DEFAULTS = {
   enabled: false,
@@ -242,7 +242,12 @@ export async function loadDevice(onProgress) {
   if (engine && engineModel === A.deviceModel) return engine;
   let lib;
   try { lib = await import(/* @vite-ignore */ WEBLLM_URL); } catch { throw new Error('Couldn’t load the on-device engine. You need to be online the first time.'); }
-  engine = await lib.CreateMLCEngine(A.deviceModel, { initProgressCallback: (p) => onProgress && onProgress(p.progress || 0, p.text || '') });
+  let model = A.deviceModel;
+  try {                                  // many phone GPUs lack 16-bit shader support; use the 32-bit build of the same model then
+    const ad = await navigator.gpu.requestAdapter();
+    if (ad && !ad.features.has('shader-f16')) model = model.replace('q4f16_1', 'q4f32_1');
+  } catch {}
+  engine = await lib.CreateMLCEngine(model, { initProgressCallback: (p) => onProgress && onProgress(p.progress || 0, p.text || '') });
   engineModel = A.deviceModel;
   return engine;
 }

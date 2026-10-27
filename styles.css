@@ -489,9 +489,9 @@ mark { background: color-mix(in srgb, var(--accent) 35%, transparent); color: in
 .msg.assistant .bub { background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 6px; }
 .msg.err .bub { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); font-size: 14.5px; border-bottom-left-radius: 6px; }
 .errbtns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.dots { display: inline-flex; gap: 5px; padding: 5px 2px; }
-.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: chdot 1.2s infinite ease-in-out; }
-.dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+.typing { display: inline-flex; gap: 5px; padding: 5px 2px; }
+.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: chdot 1.2s infinite ease-in-out; }
+.typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
 @keyframes chdot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
 .ch-empty { text-align: center; padding: 28px 4px 0; }
 .ch-empty h2 { margin: 18px 0 6px; font-size: 24px; }

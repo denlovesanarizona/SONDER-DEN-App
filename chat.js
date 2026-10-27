@@ -1,4 +1,4 @@
-// chat.js (v1.6): the Talk screen, Companion settings, Memories screen, and "talk about this entry". Newy new new.
+// chat.js (v1.6): the Talk screen, Companion settings, Memories screen, and "talk about this entry".
 import { icon } from './icons.js';
 import * as AI from './ai.js';
 
@@ -37,7 +37,7 @@ export function chatHTML(a) {
   const msgs = chat ? chat.msgs : [];
   const live = V.busy && chat && V.id === chat.id;
   const body = msgs.map((m) => `<div class="msg ${m.r}"><div class="bub selectable">${fmt(m.t)}</div></div>`).join('')
-    + (live ? `<div class="msg assistant"><div class="bub selectable" id="chStream">${V.text ? fmt(V.text) : '<span class="dots"><i></i><i></i><i></i></span>'}</div></div>` : '')
+    + (live ? `<div class="msg assistant"><div class="bub selectable" id="chStream">${V.text ? fmt(V.text) : '<span class="typing"><i></i><i></i><i></i></span>'}</div></div>` : '')
     + (V.err && chat && V.errId === chat.id ? `<div class="msg err"><div class="bub">${esc(V.err)}<div class="errbtns"><button class="pill" data-ch="retry">Try again</button><button class="pill" data-act="go" data-to="ai">Settings</button></div></div></div>` : '');
   const empty = `<div class="ch-empty"><div class="ch-orb"></div>
       <h2>${name ? `How are you, ${esc(name)}?` : 'How are you?'}</h2>

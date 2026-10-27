@@ -1,5 +1,5 @@
 // ai.js (v1.6): the companion's brain. No server of ours is involved: the model runs on YOUR computer (Ollama / LM Studio / llama.cpp) Come on dude.
-// or inside this device's browser. Chats, memories and settings live in IndexedDB (meta keys 'ai', 'aiChats', 'aiMem').
+// or inside this device's browser. Chats, memories and settings live in IndexedDB (meta keys 'ai', 'aiChats', 'aiMem'). GAHHHHH.
 
 const DEFAULTS = {
   enabled: false,

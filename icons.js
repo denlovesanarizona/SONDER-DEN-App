@@ -1,4 +1,4 @@
-// Inline SVG icons (24x24, stroke-based, Lucide-style). No external dependency.
+// Inline SVG icons (24x24, stroke-based, Lucide-style). No external dependency. New
 const P = {
   home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
   book: '<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/>',
@@ -31,6 +31,7 @@ const P = {
   send: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>'
 };
+
 
 export function icon(name, size = 20) {
   return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;

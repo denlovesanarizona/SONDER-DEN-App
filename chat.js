@@ -1,4 +1,4 @@
-// chat.js (v1.6): the Talk screen, Companion settings, Memories screen, and "talk about this entry". Newy newy.
+// chat.js (v1.6): the Talk screen, Companion settings, Memories screen, and "talk about this entry".
 import { icon } from './icons.js';
 import * as AI from './ai.js';
 
@@ -86,6 +86,7 @@ async function send(text) {
   let chat = chatFor(arg());
   if (!chat) { chat = await AI.newChat(); history.replaceState(null, '', `#/chat/${chat.id}`); }
   chat.msgs.push({ id: C.uid(), r: 'user', t: text, ts: Date.now() });
+  if (AI.cfg().memory && (await AI.rememberFromMessage(text))) C.toast('Remembered');
   if (!chat.title) chat.title = clip(text, 44);
   await AI.commitChat(chat);
   V.err = '';

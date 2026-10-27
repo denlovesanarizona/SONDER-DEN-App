@@ -56,7 +56,7 @@ h1 { font-size: 26px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
 .tag { border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 4px 11px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .tag.mood { border-color: var(--line); background: transparent; color: var(--muted); font-weight: 500; }
 
-/* header row */
+/* header row row row your boat */
 .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 18px; }
 .brand i { width: 8px; height: 8px; border-radius: 50%; background: var(--text); display: block; }

@@ -1,5 +1,5 @@
 // appearance.js (v1.4): everything about how Sonder looks.
-// Settings live in S.settings.ui (saved with your other settings, and included in backups).
+// Settings live in S.settings.ui (saved with your other settings, and included in backups). Pew pew pew.
 import { icon } from './icons.js';
 
 let X = null; // context from app.js: { S, saveSettings, applyTheme, render, openSheet, closeSheet, toast, confirmSheet }

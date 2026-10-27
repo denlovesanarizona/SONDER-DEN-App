@@ -31,7 +31,9 @@ export const PERSONAS = {
   custom: { label: 'Custom', text: '' }
 };
 
-const RULES = `Rules: You are an AI companion inside a private journaling app, not a licensed therapist, and you never claim to be one. Stay in a conversational tone, no headings or long lists. Use the journal excerpts and remembered facts only when they genuinely help, and never invent details that are not there. Do not diagnose. If the person may be in danger or talks about hurting themselves, respond with care, encourage them to contact local emergency services or a crisis line (in the US, call or text 988) and to reach out to someone they trust.`;
+const RULES = `Rules: You are an AI companion inside a private journaling app, not a licensed therapist, and you never claim to be one. Talk like a warm, natural person: no headings, no long lists. Talking about fiction, anime, manga, books, games, violence in stories, grief, trauma, anger and other heavy topics is completely fine; never refuse or lecture about them. If you don't know something (a show, a book, a person), say you're not sure instead of guessing, and let the person tell you about it. Use journal excerpts and remembered facts only when they truly help, and never invent details that are not there. Do not diagnose. Only if the person clearly says they want to hurt themselves or are in danger, respond with care and mention they can contact local emergency services or a crisis line (in the US, call or text 988). Otherwise do not mention crisis lines or hotlines.`;
+const PERSONAS_SHORT = (p) => p.split('. ').slice(0, 2).join('. ').replace(/\.?$/, '.');
+const RULES_SMALL = `You are a warm, friendly companion in a private journaling app. Reply in 2-4 short sentences, like a caring friend. Discussing fiction, anime, books, games and heavy feelings is fine; never refuse them. If you don't know something, say so and ask the person to tell you. Don't invent details. Don't mention hotlines unless the person says they want to hurt themselves.`;
 
 let C = null;
 let A = { ...DEFAULTS };
@@ -133,7 +135,8 @@ function recentLogs() {
 export function systemPrompt(chat, query) {
   const p = PERSONAS[A.persona] || PERSONAS.gentle;
   const persona = A.persona === 'custom' && A.custom.trim() ? A.custom.trim() : p.text || PERSONAS.gentle.text;
-  const parts = [persona, RULES];
+  const small = A.mode === 'device';           // tiny on-device models do better with a short prompt
+  const parts = [small ? PERSONAS_SHORT(persona) : persona, small ? RULES_SMALL : RULES];
   const who = A.callName.trim() || C.S.settings.name;
   if (who) parts.push(`The person's name is ${who}.`);
   parts.push(`Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`);
@@ -141,20 +144,20 @@ export function systemPrompt(chat, query) {
   if (A.memory && MEM.facts.length) {
     let used = 0;
     const lines = [];
-    for (const f of facts()) { if (used + f.text.length > 1400) break; lines.push('- ' + f.text); used += f.text.length; }
+    for (const f of facts()) { if (used + f.text.length > (small ? 500 : 1400)) break; lines.push('- ' + f.text); used += f.text.length; }
     parts.push('Things you remember about them:\n' + lines.join('\n'));
   }
   const others = chats().filter((c) => c.id !== chat.id && c.summary).slice(0, 3);
-  if (A.memory && others.length) parts.push('Earlier conversations:\n' + others.map((c) => `- ${stamp(c.created)}: ${clip(c.summary, 280)}`).join('\n'));
+  if (!small && A.memory && others.length) parts.push('Earlier conversations:\n' + others.map((c) => `- ${stamp(c.created)}: ${clip(c.summary, 280)}`).join('\n'));
 
   if (chat.entryId) {
     const e = C.S.items.find((i) => i.id === chat.entryId);
     if (e) parts.push(`They want to talk about this journal entry they just wrote:\n${entryBlock(e, 2600)}`);
   }
   if (A.useJournal) {
-    const { list } = relevantEntries(query, { pinId: chat.entryId });
-    if (list.length) parts.push('Possibly related entries from their journal (private; mention only if relevant):\n' + list.map((i) => entryBlock(i, 420)).join('\n\n'));
-    const logs = recentLogs();
+    const { list } = relevantEntries(query, { pinId: chat.entryId, limit: small ? Math.min(A.entries, 1) : A.entries });
+    if (list.length) parts.push('Possibly related entries from their journal (private; mention only if relevant):\n' + list.map((i) => entryBlock(i, small ? 220 : 420)).join('\n\n'));
+    const logs = small ? [] : recentLogs();
     if (logs.length) parts.push('Their recent quick notes:\n' + logs.join('\n'));
   }
   if (chat.summary) parts.push('Summary of the earlier part of this conversation: ' + chat.summary);

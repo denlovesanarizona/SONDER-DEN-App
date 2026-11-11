@@ -1,4 +1,4 @@
-// widgets.js (v1.5): the optional blocks on the Home screen. Turn them on, off and reorder them in Account > Appearance. New
+// widgets.js (v1.5): the optional blocks on the Home screen. Turn them on, off and reorder them in Account > Appearance.
 import { icon } from './icons.js';
 
 let C = null;
@@ -23,9 +23,8 @@ function streak() {
 const W = {
   shortcuts: () => `<div class="wlinks">
     <button class="card wl" data-act="go" data-to="search">${icon('search', 20)}<span>Search</span></button>
-    <button class="card wl" data-act="go" data-to="todo">${icon('todo', 20)}<span>To-do</span></button>
-    <button class="card wl" data-act="go" data-to="library">${icon('books', 20)}<span>Library</span></button>
-    <button class="card wl" data-act="go" data-to="chat">${icon('chat', 20)}<span>Talk</span></button>
+    <button class="card wl" data-act="go" data-to="todo">${icon('check', 20)}<span>To-do</span></button>
+    <button class="card wl" data-act="go" data-to="library">${icon('book', 20)}<span>Library</span></button>
     <button class="card wl" data-act="go" data-to="budget">${icon('wallet', 20)}<span>Budget</span></button></div>`,
 
   streak: () => {

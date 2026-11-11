@@ -1,4 +1,4 @@
-// Service worker: makes Sonder work offline and pick up updates.
+// Service worker: makes Sonder work offline and pick up updates. Wappy soppy.
 // To ship an update, change files and bump VERSION here (any byte change to this file triggers the update).
 const VERSION = '1.6.1'; 
 const CACHE = `sonder-${VERSION}`;

@@ -1,19 +1,16 @@
 import { icon } from './icons.js';
 import { db, uid, MOODS, moodById, TAGS, DEFAULT_SETTINGS, DEFAULT_BUDGET, ICON_DIR } from './db.js';
 import { uiInit, uiApply, appearanceHTML, homeOrder, greeting, playSplash } from './appearance.js';
-import { modulesInit, moduleRoute, moduleHTML, moduleMount, homeWidgetHTML, budgetPlusHTML, catChipsHTML, modulesBackup, modulesRestore, modulesErase, startDebrief, aiEnabled } from './modules.js';
+import { modulesInit, moduleRoute, moduleHTML, moduleMount, homeWidgetHTML, budgetPlusHTML, catChipsHTML, modulesBackup, modulesRestore, modulesErase } from './modules.js';
 import { sanitizeHTML, plainToHtml, plainToBlocks, htmlToText, htmlToMd, hasFormatting, toolbarHTML, bindRich } from './editor.js';
 import { uxInit, uxSave, uxScroll } from './ux.js';
 import { initUpdates, checkForUpdates } from './updater.js';
 
-export const VERSION = '1.6.0';
+export const VERSION = '1.6.1';
 const RELEASE_NOTES = [
-  'Companion: an AI you can talk to about your day. It runs on your own computer (or this device) and never uses a cloud service.',
-  'It can look back at your journal and remembers lasting facts about you. See and edit them in Account > Companion > Memories.',
-  'Talk about an entry: tap the chat button on an entry, or "Talk it out" right after saving.',
-  'Mark any entry "Keep private from AI" and the companion will never read it.',
-  'Companion settings: personality, reply length, how far back it reads, and where the model runs.',
-  'Updates: Sonder now checks, downloads, then asks "Update now" and reloads instantly.'
+  'The AI Companion has been removed. Its chats, memories and settings are wiped from this device.',
+  'Your journal, logs, budget, to-dos and library are unchanged.',
+  'Updates: Sonder checks, downloads, then asks "Update now" and reloads instantly.'
 ];
 
 /* ---------- helpers ---------- */
